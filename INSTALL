@@ -1,0 +1,89 @@
+                           ---------------
+                           Gestinanna 0.01
+                           ---------------
+
+Install this module, Apache::Gestinanna, and their dependencies.
+
+Install MySQL or PostgreSQL (or any other RDBMS supported by Alzabo).
+
+Run: perl -MGestinanna -e shell
+
+This will bring up a shell to manage certain aspects of the framework.  
+This is still a work in progress.
+
+  # set the host and password of the RDBMS you wish to use
+  # this information can be put in ~/.gstrc
+  gst> set host localhost  
+  gst> set password xxxxxx
+
+  # create and load the database (in this case, a MySQL database 
+  # called Gestinanna)
+  gst> schema create MySQL Gestinanna
+  gst> schema load Gestinanna
+
+  # create a test site (should be number 1)
+  gst> site create My Test Site
+
+  gst> quit
+
+Now, you can run some of the examples in the examples/ directory to 
+load files into the repository and create an initial config for site
+1. You will need to edit the scripts for them to be able to connect 
+to the RDBMS and load the right schema.
+
+After examples/base.pl and examples/site-config.pl are run, you can 
+add the following uri mappings:
+
+  perl -MGestinanna -e shell
+  gst> set host localhost
+  gst> set password xxxxxx
+  gst> schema load Gestinanna
+  gst> site select 1
+  gst> site uri add /file-manager/* /sys/file-manager
+  gst> site uri add /acct/confirm/* /sys/secure/user/confirm
+  gst> site uri add /acct/create.xml /sys/secure/user/create
+
+You will also need to add the following information to the database 
+directly (the other columns in these tables can be NULL when these 
+are added):
+
+  Attribute table:
++---------------+-----------------+-----------+---------+-----------+-------+
+| resource_type | resource_id     | user_type | user_id | attribute | value |
++---------------+-----------------+-----------+---------+-----------+-------+
+| *             | //*             | actor     | 1       | admin     | 65535 |
+| *             | //*@*           | actor     | 1       | admin     | 65535 |
+| *             | //*/            | actor     | 1       | admin     | 65535 |
+| *             | /               | actor     | 1       | admin     | 65535 |
+| *             | /               | actor     | *       | read      |     1 |
+| *             | /home/          | actor     | *       | read      |     1 |
+| *             | /home/SELF/     | actor     | *       | read      |     1 |
+| *             | /home/SELF/*    | actor     | *       | admin     |     1 |
+| *             | /home/SELF//*   | actor     | *       | admin     |     1 |
+| *             | /home/SELF//*/  | actor     | *       | admin     |     1 |
+| *             | /home/SELF//*@* | actor     | *       | admin     |     1 |
++---------------+-----------------+-----------+---------+-----------+-------+
+
+  Embedding_Map table:
++------+-------+------------+--------+-----------------------+
+| site | theme | path       | type   | file                  |
++------+-------+------------+--------+-----------------------+
+|    1 |       | //* | //*/ | portal | /theme/_default/frame |
++------+-------+------------+--------+-----------------------+
+
+  User table:
++---------+------+----------------------------------+-------+
+| user_id | uid  | password                         | email |
++---------+------+----------------------------------+-------+
+|       1 | NULL | 86f3059b228c8acf99e69734b6bb32cc | NULL  |
++---------+------+----------------------------------+-------+
+
+  Username table:
++----------+---------+----------------+-----------+
+| username | user_id | password_check | activated |
++----------+---------+----------------+-----------+
+| admin    |       1 |                | NULL      |
++----------+---------+----------------+-----------+
+
+(The User and Username table together define a username of admin with 
+a password of admin.)

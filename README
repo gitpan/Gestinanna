@@ -1,0 +1,19 @@
+                           ---------------
+                           Gestinanna 0.01
+                           ---------------
+
+This is the Gestinanna Application Framework for Apache/mod_perl.  This 
+is a highly intensive XML environment from the scripting to the final 
+output to the client.
+
+See the examples in examples/ to see details.
+
+THIS IS ALPHA CODE.  Do not expect it to work without a little effort.  
+We are working on documentation.  There are bugs.  Etc.  Feel free to 
+contact the author or post questions to the mod_perl list or other 
+venues as appropriate.  There is a mailing list on sourceforge for 
+this project as well.
+
+This package is an early release to get the code out for comment.
+
+For installation information, see INSTALL.
