@@ -308,7 +308,12 @@ unary_expr :
 
 union_expr :
     path_expr
-    | union_expr VBAR path_expr          { '( (' . $_[1] . '),(' . $_[3] . ') )' }
+    | union_expr_x                       { '[ ' . $_[1] . ' ]' }
+    ;
+
+union_expr_x :
+    path_expr VBAR path_expr               { "($_[1]),($_[3])" }
+    | union_expr_x VBAR path_expr          { "$_[1],($_[3])" }
     ;
 
 path_expr :
@@ -402,6 +407,9 @@ predicates :
 
 primary_expr :
     DOLLAR_QNAME     { "\$vars{\"\Q$_[1]\E\"}" }
+    | LT expr GT { # expr is expected to be a statement that needs to be called until it returns undef or nothing
+       qq{do { my(\@list, \$t, \@t);  push \@list, \$t, \@t while( ((\$t, \@t) = ($_[2])) && defined \$t); \@list; }}
+    }
     | LPAR expr RPAR { '(' . $_[2] . ')' }
     | LITERAL { "\"\Q$_[1]\E\"" }
     | NUMBER
@@ -419,11 +427,8 @@ primary_expr :
           _no $_[0], "unknown namespace ($ns)" unless defined $tns;
           $name =~ tr/-/_/;
           $name = "xsm_$name";
-          my $pkg = $Gestinanna::XSM::tag_lib{$tns};
-          #warn "namespace $ns -> package $pkg\n";
-          #warn Data::Dumper -> Dump([\%Gestinanna::XSM::tag_lib]);
-          #warn Data::Dumper -> Dump([$_[0] -> {USER}{e}{Current_Element}{Namespaces}]);
-          _no $_[0], "no namespace handler defined for $ns ($tns)" unless $pkg;
+          my $pkg = $_[0] -> {USER}{e} -> ns_handler($tns);
+          _no $_[0], "no namespace handler defined for $ns ($tns)" unless defined $pkg;
           _no $_[0], "no such function $_[1]" unless UNIVERSAL::can($pkg, $name);
 
           my $proto = prototype "${pkg}::${name}";
@@ -722,8 +727,25 @@ my %preceding_tokens = map { ( $_ => undef ) } ( qw(
 ) ;
 
 
+=begin testing
+
+# debugging
+
+is(__PACKAGE__::debugging, 0);
+
+=end testing
+
+=cut
+
 sub debugging () { 0 }
 
+=begin testing
+
+# lex
+
+=end testing
+
+=cut
 
 sub lex {
     my ( $p ) = @_;
@@ -826,12 +848,27 @@ sub lex {
     return ( $token, $val );
 }
 
+=begin testing
+
+# error
+
+=end testing
+
+=cut
 
 sub error {
     my ( $p ) = @_;
     return if $p -> {USER} -> {Input} =~ m{^\s*$};
     warn "Couldn't parse '$p->{USER}->{Input}' at position ", pos $p->{USER}->{Input}, "\n";
 }
+
+=begin testing
+
+# parse
+
+=end testing
+
+=cut
 
 sub parse {
     my $self = shift;

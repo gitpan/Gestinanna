@@ -1,28 +1,130 @@
 package Gestinanna::Exception;
 
 use base qw(Error);
-use overload 'bool' => 'bool';
+use overload 
+    'bool' => 'bool',
+    '""'   => 'to_string',
+;
 use strict;
 
-# based on Apache::AxKit::Exception
+=begin testing
+
+# class
+
+eval {
+    throw __PACKAGE__
+        -class => 'foo.bar'
+    ;
+};
+
+my $e = $@;
+
+ok($e);
+isa_ok($e, '__PACKAGE__');
+ok($e -> class('foo'));
+ok($e -> class('foo.bar'));
+ok(!$e -> class('foo.bar.baz'));
+ok(!$e -> class('foo.ba.'));
+ok($e -> class('foo.'));
+
+=end testing
+
+=cut
+
+sub class {
+    my $self = shift;
+    my $class = shift;
+
+    if(defined $class) {
+        my $qrclass = qr{^\Q$class\E};
+        return 1 if $self -> {'-class'} =~ m{$qrclass(\.|$)}
+                 || $class =~ m{\.$}
+                    && $self -> {'-class'} =~ m{$qrclass};
+  
+        return 0;
+    }
+
+    return $self -> {'-class'};
+}
+
+=begin testing
+
+# bool
+
+eval {
+    throw __PACKAGE__
+    ;
+};
+
+my $e = $@;
+
+ok($e);
+isa_ok($e, '__PACKAGE__');
+is($e -> bool, 1);
+is(($e ? 1 : 0), 1);
+
+=end testing
+
+=cut
 
 sub bool { 1; }
 
-sub value {
+=begin testing
+
+# to_string
+
+eval {
+    throw __PACKAGE__
+        -text => 'This is %s much %s',
+        -param => [qw(so fun)],
+    ;
+};
+
+my $e = $@;
+
+ok($e);
+isa_ok($e, '__PACKAGE__');
+is($e -> to_string, q{This is so much fun});
+is("".$e, q{This is so much fun});
+
+=end testing
+
+=cut
+
+sub to_string {
     my $self = shift;
 
-    exists $self->{'-value'} ? $self->{'-value'} : 1;
+    return "" unless defined $self -> {'-text'};
+
+    return sprintf($self -> {'-text'}, @{$self -> {'-param'}||[]});
 }
 
-BEGIN {
-    eval qq{\@${_}::ISA = (qw(Gestinanna::Exception));}
-        for (qw(
-            Gestinanna::Exception::Authz
-            Gestinanna::Exception::Error
-            Gestinanna::Exception::Load
-	    Gestinanna::Exception::Schema
-        ));
+=begin testing
+
+# exception
+
+eval {
+    throw __PACKAGE__
+        -e => 'THis',
+    ;
+};
+
+my $e = $@;
+
+ok($e);
+isa_ok($e, '__PACKAGE__');
+is($e -> exception, 'THis');
+
+=end testing
+
+=cut
+
+sub exception {
+    my $self = shift;
+
+    return $self -> {'-e'};
 }
+
 
 1;
 

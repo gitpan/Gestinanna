@@ -6,11 +6,9 @@ package Gestinanna::XSM::Authz;
 
 use strict;
 
-our @ISA = qw(Gestinanna::XSM);
+use base qw(Gestinanna::XSM);
 
 our $NS = 'http://ns.gestinanna.org/authz';
-
-__PACKAGE__ -> register;
 
 sub start_document {
     return "#initialize authz namespace\n";
@@ -119,22 +117,22 @@ sub end_element {
             # base it on select and path
             # expect the objects to be POF objects
             $attribute = '*' unless defined $attribute && $attribute ne '';
-            $code = <<1HERE1
+            $code = <<EOF
 grep { UNIVERSAL::isa(\$_, 'Gestinanna::POF::Base') && \$_ -> has_access($attribute, \\\@authz_or1) }
      $select
-1HERE1
+EOF
         } elsif(defined $path && defined $type) {
             $path .= "($path . '\@' . $attribute)" if defined $attribute && $attribute ne '';
             #$path = $e -> makeSingleQuoted($path);
             #$type = $e -> makeSingleQuoted($type);
             my $factory = '$R -> factory';
-            $code = <<1HERE1;
+            $code = <<EOF;
 $factory -> {authz} -> has_attribute(
     [ eval { $factory -> {actor} -> object_type }, eval { $factory -> {actor} -> object_id } ],
     [ $type, $path ],
     \\\@authz_or1
 )
-1HERE1
+EOF
         }
         if($code) {
             $code = "unless($code) { return ( ($attribs{state})[0] ); }";
@@ -190,6 +188,8 @@ sub xsm_has_access ($$$$) {
     return 0 unless defined $type && $type ne '';
     return 0 unless defined $path && $path ne '';
 
+    return 0 unless defined $R -> factory -> {authz};
+
     my $ret = $R -> factory -> {authz} -> has_attribute(
         $actor, [ $type, $path ], $attr
     );
@@ -197,5 +197,25 @@ sub xsm_has_access ($$$$) {
     #warn "  returning $ret\n";
     return $ret;
 }    
+
+sub xsm_actor ($) {
+    my($sm) = @_;
+
+    my $R = Gestinanna::Request -> instance;
+
+    my $actor;
+
+    if($R -> factory -> {actor}) {
+        $actor = $sm -> {_cache}{authz}{actor} ||= [
+            $R -> factory -> {actor} -> object_type,
+            $R -> factory -> {actor} -> object_id,
+        ];
+    }
+    else {
+        $actor = [ 'user', 'guest' ];
+    }
+
+    return $actor;
+}
 
 1;

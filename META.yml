@@ -1,35 +1,38 @@
 --- #YAML:1.0
 name: Gestinanna
-version: 0.01
+version: 0.02
 license: perl
 distribution_type: module
 requires:
-  Alzabo: 0.67
+  Alzabo: 0.82
+  Archive::Tar: 0
   Data::UUID: 0
   Email::Valid: 0
   Error: 0.15
-  Expect: 0
   Gestinanna::POF: 0.06
   Gestinanna::POF::Repository: 0.03
-  IO::Pty: 0
   Lingua::EN::Inflect: 1.88
   Lingua::Preferred: 0.2
   Mail::Sendmail: 0
+  Module::Require: 0.05
   Template: ~
+  Workflow: 0.03
   XML::LibXML: ~
 recommends:
   DBD::SQLite: 0
+  Expect: 0
+  IO::Pty: 0
+  Term::Size: 0.2
 build_requires: {}
 conflicts: {}
 provides:
+  Apache::Template::Provider::Gestinanna:
+    file: lib/Apache/Template/Provider/Gestinanna.pm
   Gestinanna:
     file: lib/Gestinanna.pm
-    version: 0.01
+    version: 0.02
   Gestinanna::Authz:
     file: lib/Gestinanna/Authz.pm
-    version: 0.00_02
-  Gestinanna::Authz::Path:
-    file: lib/Gestinanna/Authz/Path.pm
     version: 0.00_02
   Gestinanna::ContentProvider:
     file: lib/Gestinanna/ContentProvider.pm
@@ -57,44 +60,30 @@ provides:
       lib/Gestinanna/POF/Secure/Gestinanna/RepositoryObject.pm
   Gestinanna::Request:
     file: lib/Gestinanna/Request.pm
-  Gestinanna::Schema:
-    file: lib/Gestinanna/Schema.pm
-  Gestinanna::Schema::Authz:
-    file: lib/Gestinanna/Schema/Authz.pm
-  Gestinanna::Schema::Base:
-    file: lib/Gestinanna/Schema/Base.pm
-  Gestinanna::Schema::Context:
-    file: lib/Gestinanna/Schema/Context.pm
-  Gestinanna::Schema::Document:
-    file: lib/Gestinanna/Schema/Document.pm
-  Gestinanna::Schema::Portal:
-    file: lib/Gestinanna/Schema/Portal.pm
-  Gestinanna::Schema::Repository:
-    file: lib/Gestinanna/Schema/Repository.pm
-  Gestinanna::Schema::Session:
-    file: lib/Gestinanna/Schema/Session.pm
-  Gestinanna::Schema::Site:
-    file: lib/Gestinanna/Schema/Site.pm
-  Gestinanna::Schema::User:
-    file: lib/Gestinanna/Schema/User.pm
-  Gestinanna::Schema::View:
-    file: lib/Gestinanna/Schema/View.pm
-  Gestinanna::Schema::XSLT:
-    file: lib/Gestinanna/Schema/XSLT.pm
-  Gestinanna::Schema::XSM:
-    file: lib/Gestinanna/Schema/XSM.pm
+  Gestinanna::SchemaManager:
+    file: lib/Gestinanna/SchemaManager.pm
+  Gestinanna::SchemaManager::Schema:
+    file: lib/Gestinanna/SchemaManager/Schema.pm
   Gestinanna::Shell:
     file: lib/Gestinanna/Shell.pm
   Gestinanna::Shell::Base:
     file: lib/Gestinanna/Shell/Base.pm
+  Gestinanna::Shell::Package:
+    file: lib/Gestinanna/Shell/Package.pm
   Gestinanna::Shell::Schema:
     file: lib/Gestinanna/Shell/Schema.pm
+  Gestinanna::Shell::Schema::Def:
+    file: lib/Gestinanna/Shell/Schema/Def.pm
   Gestinanna::Shell::Site:
     file: lib/Gestinanna/Shell/Site.pm
   Gestinanna::Shell::Site::URI:
     file: lib/Gestinanna/Shell/Site.pm
+  Gestinanna::SiteConfiguration:
+    file: lib/Gestinanna/SiteConfiguration.pm
   Gestinanna::Upload:
-    file: lib/Gestinanna/Request.pm
+    file: lib/Gestinanna/Upload.pm
+  Gestinanna::Util:
+    file: lib/Gestinanna/Util.pm
   Gestinanna::XSM:
     file: lib/Gestinanna/XSM.pm
   Gestinanna::XSM::Auth:
@@ -109,22 +98,23 @@ provides:
     version: 0.06
   Gestinanna::XSM::ContentProvider:
     file: lib/Gestinanna/XSM/ContentProvider.pm
-  Gestinanna::XSM::Core:
-    file: lib/Gestinanna/XSM.pm
   Gestinanna::XSM::DefaultHandler:
-    file: lib/Gestinanna/XSM.pm
+    file: lib/Gestinanna/XSM/DefaultHandler.pm
   Gestinanna::XSM::Diff:
     file: lib/Gestinanna/XSM/Diff.pm
   Gestinanna::XSM::Digest:
     file: lib/Gestinanna/XSM/Digest.pm
   Gestinanna::XSM::Expression:
     file: lib/Gestinanna/XSM/Expression.pm
+  Gestinanna::XSM::Expression::Parser:
+    file: lib/Gestinanna/XSM/Expression/Parser.pm
+    version: 1.05
   Gestinanna::XSM::Gestinanna:
     file: lib/Gestinanna/XSM/Gestinanna.pm
   Gestinanna::XSM::LibXMLSupport:
     file: lib/Gestinanna/XSM/LibXMLSupport.pm
   Gestinanna::XSM::Op:
-    file: lib/Gestinanna/XSM.pm
+    file: lib/Gestinanna/XSM/DefaultHandler.pm
   Gestinanna::XSM::POF:
     file: lib/Gestinanna/XSM/POF.pm
   Gestinanna::XSM::SAXHandler:
@@ -135,9 +125,36 @@ provides:
     file: lib/Gestinanna/XSM/SMTP.pm
   Gestinanna::XSM::SMTP::Message:
     file: lib/Gestinanna/XSM/SMTP.pm
+  Gestinanna::XSM::Script:
+    file: lib/Gestinanna/XSM/Script.pm
+  Gestinanna::XSM::StateMachine:
+    file: lib/Gestinanna/XSM/StateMachine.pm
+  Gestinanna::XSM::Workflow:
+    file: lib/Gestinanna/XSM/Workflow.pm
   Gestinanna::XSM::XMLSimple:
     file: lib/Gestinanna/XSM/XMLSimple.pm
+  Parse::Yapp::Driver:
+    file: lib/Gestinanna/XSM/Expression/Parser.pm
+    version: 1.05
   StateMachine::Gestinanna::Exception:
     file: lib/Gestinanna/XSM/Base.pm
     version: 0.06
+  activate:
+    file: lib/Gestinanna/Shell/Package.pm
+  create:
+    file: lib/Gestinanna/Shell/Package.pm
+  edit:
+    file: lib/Gestinanna/Shell/Package.pm
+  install:
+    file: lib/Gestinanna/Shell/Package.pm
+  list:
+    file: lib/Gestinanna/Shell/Package.pm
+  open:
+    file: lib/Gestinanna/Shell/Package.pm
+  set:
+    file: lib/Gestinanna/Shell/Package.pm
+  view:
+    file: lib/Gestinanna/Shell/Package.pm
+  write:
+    file: lib/Gestinanna/Shell/Package.pm
 generated_by: Module::Build version 0.21

@@ -4,11 +4,9 @@
 
 package Gestinanna::XSM::ContentProvider;
 
-our @ISA = qw(Gestinanna::XSM);
+use base qw(Gestinanna::XSM);
 
 our $NS = 'http://ns.gestinanna.org/content-provider';
-
-__PACKAGE__ -> register;
 
 sub start_document {
     return "#initialize content-provider namespace\n";

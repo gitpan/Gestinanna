@@ -1,12 +1,27 @@
                            ---------------
-                           Gestinanna 0.01
+                           Gestinanna 0.02
                            ---------------
 
 This is the Gestinanna Application Framework for Apache/mod_perl.  This 
 is a highly intensive XML environment from the scripting to the final 
-output to the client.
+output to the client.  
 
-See the examples in examples/ to see details.
+Instead of being yet another content management system, Gestinanna is 
+a process management system.  Except for the model portion of the MVC 
+design pattern, every part of an application is a document.  This 
+includes both the controller and the views.
+
+The controllers are written in an XML language that allows for 
+descriptive programming instead of imperative programming: describe 
+the structure of the application and what happens when a customer goes 
+from one view to another.  This description is then compiled into Perl 
+for actual execution on the server.  Controllers may inherit other 
+controllers in both IS-A and HAS-A relationships.  Inheritance applies 
+to states, transitions, and views, allowing for extensive code reuse 
+when building new applications.
+
+The system comes with support for taglibs, controllers, views, 
+documents, portal-like pages, and workflows.
 
 THIS IS ALPHA CODE.  Do not expect it to work without a little effort.  
 We are working on documentation.  There are bugs.  Etc.  Feel free to 

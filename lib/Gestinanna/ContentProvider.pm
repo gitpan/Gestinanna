@@ -1,5 +1,7 @@
 package Gestinanna::ContentProvider;
 
+use Gestinanna::Request;
+
 sub init {
     my($class, %params) = @_;
 
@@ -31,6 +33,7 @@ sub retrieve_content {
         ($factory, $type) = ($R -> factory, $self -> {type});
         $filename = shift;
     }
+
     return $factory -> new($type => object_id => $filename);
 }
 

@@ -4,11 +4,11 @@
 
 package Gestinanna::XSM::POF;
 
-our @ISA = qw(Gestinanna::XSM);
+use base qw(Gestinanna::XSM);
+
+#our @ISA = qw(Gestinanna::XSM);
 
 our $NS = 'http://ns.gestinanna.org/pof';
-
-__PACKAGE__ -> register;
 
 sub start_document {
     return "#initialize pof namespace\n";

@@ -8,6 +8,21 @@ use vars qw($provider_cb);
 
 $provider_cb = \&get_provider;
 
+=begin testing
+
+# reset
+
+__PACKAGE__::__METHOD__;
+
+#is($XML::LibXML::match_cb, \&match_uri);
+#is($XML::LibXML::read_cb, \&read_uri);
+#is($XML::LibXML::close_cb, \&close_uri);
+#is($XML::LibXML::open_cb, \&open_uri);
+
+=end testing
+
+=cut
+
 sub reset {
     my $class = shift;
     $XML::LibXML::match_cb = \&match_uri;
@@ -15,6 +30,20 @@ sub reset {
     $XML::LibXML::close_cb = \&close_uri;
     $XML::LibXML::open_cb = \&open_uri;
 }
+
+=begin testing
+
+# get_provider
+
+my $provider = __PACKAGE__::__METHOD__; # will need ($r) here eventually
+
+ok(UNIVERSAL::isa($provider, 'CODE'));
+
+ok($provider -> ( ) eq '');
+
+=end testing
+
+=cut
 
 # Default provider callback
 sub get_provider {
@@ -24,12 +53,28 @@ sub get_provider {
     return $provider;
 }
 
+=begin testing
+
+# match_uri
+
+=end testing
+
+=cut
+
 sub match_uri {
     my $uri = shift;
 #    AxKit::Debug(8, "LibXSLT match_uri: $uri");
     return 1 if $uri =~ /^(axkit|xmldb):/;
     return $uri !~ /^\w+:/; # only handle URI's without a scheme
 }
+
+=begin testing
+
+# open_uri
+
+=end testing
+
+=cut
 
 sub open_uri {
     my $uri = shift || './';
@@ -57,9 +102,25 @@ sub open_uri {
     return '';
 }
 
+=begin testing
+
+# close_uri
+
+=end testing
+
+=cut
+
 sub close_uri {
     # do nothing
 }
+
+=begin testing
+
+# read_uri
+
+=end testing
+
+=cut
 
 sub read_uri {
     return substr($_[0], 0, $_[1], "");

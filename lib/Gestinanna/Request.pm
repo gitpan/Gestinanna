@@ -1,21 +1,26 @@
-# $Id: Request.pm,v 1.1 2004/02/24 18:41:02 jgsmith Exp $
+# $Id: Request.pm,v 1.3 2004/06/25 07:44:15 jgsmith Exp $
 
 package Gestinanna::Request;
 
 use strict;
 no strict 'refs';
 
-#use Apache;
-use Apache::Cookie;
 use Apache::Constants qw(OK DECLINED NOT_FOUND SERVER_ERROR);
-#use Apache::Request;
+use Apache::Cookie;
 use Apache::Session::Flex;
+use AxKit;
 use Digest::SHA1;
-
+use Gestinanna::Authz;
+use Gestinanna::POF;
+use Gestinanna::Schema;
+use Gestinanna::SiteConfiguration;
+use Gestinanna::Upload;
+use Gestinanna::Util qw(:path);
+use Storable ();
 
 BEGIN {
-    our $IN_MOD_PERL = $ENV{MOD_PERL};
-    if($IN_MOD_PERL) {
+    $__PACKAGE__::IN_MOD_PERL = $ENV{MOD_PERL} || 0;
+    if($__PACKAGE__::IN_MOD_PERL) {
         require Apache;
         require Apache::Log;
         require Apache::Request;
@@ -27,7 +32,17 @@ BEGIN {
     }
 }
 
-sub in_mod_perl { $Gestinanna::Request::IN_MOD_PERL; }
+=begin testing
+
+# in_mod_perl
+
+is(__PACKAGE__:: __METHOD__, 0);
+
+=end testing
+
+=cut
+
+sub in_mod_perl { $__PACKAGE__::IN_MOD_PERL; }
 
 our $INSTANCE; # for non-apache environments
 
@@ -52,6 +67,7 @@ sub new {
         $self -> {_r} = Apache::Request -> instance(Apache -> request);
 
         $self -> {_gst} = Apache::Gestinanna -> retrieve;
+        $self -> {site} = $self -> {_gst} -> config;
     }
 
     #warn "Calling $self -> init\n";
@@ -69,34 +85,39 @@ sub new {
     return $self;
 }
 
+=begin testing
+
+# instance
+
+is(__PACKAGE__ -> instance, __OBJECT__);
+
+=end testing
+
+=cut
+
 sub instance { $_[0] -> new }
 
 # need to handle file uploads -- Gestinanna::Upload
 
-use AxKit;
-
-use Gestinanna::POF;
-use Gestinanna::Authz;
-use Gestinanna::Schema;
-
-use Storable ();
-
 sub read_session {
-    my($self, $config, $hash, $id) = @_;
+    my($self, $hash, $id) = @_;
 
     no strict 'refs';
+    my $dbh;
+    if(UNIVERSAL::isa($self -> {_dbh}, 'Alzabo::Runtime::Schema')) {
+        $dbh = $self -> {_dbh} -> driver -> handle;
+    }
+    else {
+        $dbh = $self -> {_dbh};
+    }
 
     eval {
         local($SIG{__DIE__});
         tie %{$hash}, 'Apache::Session::Flex', $id, {
             Commit => 1,
-            #%{$c -> session_option || {}},
-            Store => $config -> {'session'} -> {'store'} -> {'store'},
-            Lock  => $config -> {'session'} -> {'store'} -> {'lock'},
-            Generate => $config -> {'session'} -> {'store'} -> {'generate'},
-            Serialize => $config -> {'session'} -> {'store'} -> {'serialize'},
-            Handle => $self -> {_dbh},
-            LockHandle => $self -> {_dbh},
+            %{$self -> {site} -> session_params},
+            Handle => $dbh,
+            LockHandle => $dbh,
         };
     };
     if($@ || !tied(%$hash)) { # need to check for database errors so we don't thrash about here
@@ -109,13 +130,9 @@ sub read_session {
             local($SIG{__DIE__});
             tie %{$hash}, 'Apache::Session::Flex', undef, {
                 Commit => 1,
-                #%{$c -> session_option || {}},
-                Store => $config -> {'session'} -> {'store'} -> {'store'},
-                Lock  => $config -> {'session'} -> {'store'} -> {'lock'},
-                Generate => $config -> {'session'} -> {'store'} -> {'generate'},
-                Serialize => $config -> {'session'} -> {'store'} -> {'serialize'},
-                Handle => $self -> {_dbh},
-                LockHandle => $self -> {_dbh},
+                %{$self -> {site} -> session_params},
+                Handle => $dbh,
+                LockHandle => $dbh,
             };
         };
         if($@ || !tied(%$hash)) {
@@ -163,29 +180,38 @@ sub init {
 #    $self->{data} = $_[0];
 #    $self->{styles} = $_[1];
 
-    delete @{$self}{qw(_dbh _cfg _content_provider _decline)};
+    delete @{$self}{qw(_dbh _content_provider _decline)};
 
-    my $cfg = $self -> {_gst};
+    my($site, $pkg, $resources);
+    $site = $self -> {site};
 
-    $self -> {_cfg} = $cfg;
+    $pkg = $site -> package if defined $site;
 
-    my $config = $cfg -> config;
+    # need to just get a factory and be happy...
+    # then worry about which resources to use for mappings
+    $resources = $self -> {_gst} -> resources if defined $self -> {_gst};
 
-    my $pkg = $config -> {package};
+    $self -> {_dbh} = $resources -> {dbi} -> get() if defined $resources -> {dbi};
 
-    $self -> {_dbh} = $cfg -> resources -> {dbi} -> get();
-
-    if($cfg -> resources -> {ldap}) {
-        my $ldap = $cfg -> resources -> {ldap} -> get();
+    if($resources -> {ldap}) {
+        my $ldap = $resources -> {ldap} -> get();
         $self -> {_ldap} = $ldap;
         $self -> {_ldap_schema} = ${"${pkg}::ldap_schema"} ||= $ldap -> schema;
     }
 
 
-    my $alzabo_schema = Gestinanna::Schema -> load_schema(
-        name => $config -> {schema},
-        dbh => $self -> {_dbh},
-    );
+    my $alzabo_schema;
+    if(UNIVERSAL::isa($self -> {_dbh}, 'Alzabo::Runtime::Schema')) {
+        $alzabo_schema = $self -> {_dbh};
+    }
+    else {
+        $alzabo_schema = Gestinanna::Schema -> load_schema(
+            name => $self -> {_gst} -> {schema},
+            dbh => $self -> {_dbh},
+        );
+    }
+    $self -> {_alzabo} = $alzabo_schema;
+    $self -> {_authz} = Gestinanna::Authz -> new(alzabo_schema => $alzabo_schema);
 
 
     # factory should already have classes configured
@@ -206,11 +232,10 @@ sub init {
         $uri_session_id = $1;
         $self -> uri($base_uri);
     }
-    #warn "base uri: $base_uri\n";
 
-    my $cookies = Apache::Cookie->fetch;
+    my $cookie = $site -> session_cookie($self -> {_r});#Apache::Cookie->fetch;
             
-    my $cookie = $cookies->{$config -> {'session'} -> {'cookie'} -> {'name'} || 'SESSIONID'};
+    #my $cookie = $cookies->{$config -> {'session'} -> {'cookie'} -> {'name'} || 'SESSIONID'};
     $cookie_session_id = $cookie -> value if defined $cookie;
 
     my $session = $pkg . "::session";
@@ -220,15 +245,16 @@ sub init {
        || (defined($uri_session_id) && !defined($cookie_session_id))
     ) {
         my $session_id = $cookie_session_id || $uri_session_id;
-        my $id = $self -> read_session($config, $session, $session_id);
+        my $id = $self -> read_session($session, $session_id);
         return unless $id; # need to put up an error page
         if($id ne $session_id) {
             # need to do a redirect - check for cookies, etc.
+            my $cookie = $site -> new_cookie($id);
             Apache ->
                 request ->
                     err_header_out(
-                        "Set-Cookie" => 
-                            ($config -> {'session'} -> {'cookie'} -> {'name'} || 'SESSIONID') . "=$id; Path=/;"
+                        "Set-Cookie" => $cookie -> as_string,
+                            #($config -> {'session'} -> {'cookie'} -> {'name'} || 'SESSIONID') . "=$id; Path=/;"
                     );
             $session -> {redirect_args} = { %{ $self -> parms } };
             $self -> do_redirect("/$id$base_uri");
@@ -244,14 +270,15 @@ sub init {
     }
     else {
         # no session id - need to set one and do a redirect to check cookies
-        my $id = $self -> read_session($config, $session, undef);
+        my $id = $self -> read_session($session, undef);
         #warn "new id: $id\n";
         # do redirect
+        my $cookie = $site -> new_cookie($id);
         Apache ->
             request ->
                 err_header_out(
-                    "Set-Cookie" => 
-                        ($config -> {'session'} -> {'cookie'} -> {'name'} || 'SESSIONID') . "=$id; Path=/;"
+                    "Set-Cookie" => $cookie -> as_string,
+        #                ($config -> {'session'} -> {'cookie'} -> {'name'} || 'SESSIONID') . "=$id; Path=/;"
                 );
         # need to handle file uploads
         $session -> {redirect_args} = { %{ $self -> parms } };
@@ -272,11 +299,11 @@ sub init {
 
     # need to check for virtual directory handlers
 
+    my $content_providers = $site -> content_providers;
     while(($uri = shift(@uris)) && !$content_provider_class) {
-        ($content_type, $filename) = $self -> uri_to_filename($uri_map, $uri, $cfg -> config -> {site}, $cfg -> config -> {'content-provider'});
+        ($content_type, $filename) = $self -> uri_to_filename($uri_map, $uri, $site, $content_providers);
 
-        $content_provider_class = $cfg -> config -> {'content-provider'} -> {$content_type} -> {class};
-        #warn "uri: $uri => $content_type : $filename implemented by $content_provider_class\n";
+        $content_provider_class = $content_providers -> {$content_type} -> {class};
     }
 
     unless(defined $content_provider_class) {
@@ -321,42 +348,12 @@ sub init {
     delete $session -> {contexts};
     }
 
-    my $factory_class = $pkg . "::POF";
-    #warn "Creating factory from $factory_class\n";
-    my $factory = $self -> {factory} = $factory_class -> new(_factory => (
-        alzabo_schema => $alzabo_schema,
-        site => $config -> {site},
-        tag_path => $config -> {'tag-path'},
-        ($self -> {_ldap} ? (ldap => $self -> {_ldap}) : ()),
-        ($self -> {_ldap_schema} ? (ldap_schema => $self -> {_ldap_schema}) : ()),
-        authz => Gestinanna::Authz -> new(alzabo_schema => $alzabo_schema),
-    ));
-    #warn "factory has following keys: ", join(", ", keys %{$self -> {factory}||{}}), "\n";
+    my $factory = $site -> factory(resources => $resources, authz => $self -> {_authz});
 
     my $actor;
     if($session -> {actor_id}) {
         $actor = $factory -> new(actor => (object_id => $session -> {actor_id}));
     }
-    #elsif($config -> {'auth-provider'} -> {class}) {
-    #    # check for authentication credentials
-    #    my $auth_class = $config -> {'auth-provider'} -> {class};
-    #    # should have been loaded at server startup
-    #    my $res = $auth_class -> authenticate(
-    #        config => $config -> {'auth-provider'},
-    #        factory => $factory,
-    #        #args => $args,
-    #        username => $args -> {$config -> {'auth-provider'} -> {'fields'} -> {'username'}},
-    #        password => $args -> {$config -> {'auth-provider'} -> {'fields'} -> {'password'}},
-    #    );
-    #    if($res >= 100) {  # HTTP response code
-    #        $self -> {_decline} = $res;
-    #        return;
-    #    }
-#
-#        $actor = $factory -> new(actor => (
-#            $config -> {'auth-provider'} -> {'actor-id'} => $args -> {$config -> {'auth-provider'} -> {'fields'} -> {'username'}}
-#        )) if $res;
-#    }
 
     #warn "Session{actor_id}: " . $session -> {actor_id} . "\n";
     if($actor && $actor -> is_live) {
@@ -365,9 +362,9 @@ sub init {
             actor => $actor,
         ));
     }
-    elsif(defined $config -> {'anonymous'}) { # set up guest actor
+    elsif(defined $site -> anonymous_id) { # set up guest actor
         $actor = $factory -> new(actor => (
-            object_id => $config -> {'anonymous'}
+            object_id => $site -> anonymous_id,
         ));
         $factory = $factory -> new(_factory => (
             %$factory,
@@ -456,9 +453,7 @@ sub embeddings {
     # we want to track down the embedding chain here and get each content provider in turn
 
     my @embeddings; # list of content provider objects - build from top-down, use bottom-up
-    my $alzabo_schema = $self -> {factory} -> {alzabo_schema};
-
-    #warn "looking for embeddings:\n  filename: $$self{filename}\n  type: $$self{type}\n  uri: $$self{base_uri}\n";
+    my $alzabo_schema = $self -> {_alzabo};
 
     if($alzabo_schema -> has_table('Embedding_Map')) {
         my $embed_table = $alzabo_schema -> table('Embedding_Map');
@@ -468,8 +463,8 @@ sub embeddings {
             %params,
             args => $self -> {args},
             uri => $self -> {base_uri},
-            site => $self -> config -> {site},
-            theme => '',
+            site => $self -> {site},
+            theme => $self -> {site} -> default_theme,
             table => $embed_table,
             session => $self -> {session},
         );
@@ -485,8 +480,6 @@ sub embeddings {
             )
         );
     }
-
-    #warn "Embeddings:\n  " , join("\n  ", @embeddings), "\n";
 
     return unless @embeddings;
 
@@ -507,7 +500,7 @@ sub embeddings {
     return \@embeddings;
 }
 
-sub config { $_[0] -> {_cfg} ? $_[0] -> {_cfg} -> config : { } }
+sub config { $_[0] -> {site} ||= Gestinanna::SiteConfiguration -> new }
 
 sub error { shift -> error_provider(@_); } # for now
 
@@ -546,12 +539,14 @@ sub error_provider {
 sub get_content_provider {
     my($self, %params) = @_;
 
+    #warn "$self -> get_content_provider() : ", Data::Dumper -> Dump([\%params]);
     return unless defined $params{type} && defined $params{filename};
 
-    my $config = $self -> {_cfg} -> config;
+    my $config = $self -> {site};
 
-    my $content_provider_class = $config -> {'content-provider'} -> {$params{type}} -> {class};
+    my $content_provider_class = $config -> content_providers -> {$params{type}} -> {class};
 
+    #warn "$params{type} => $content_provider_class\n";
     return unless defined $content_provider_class;
 
     #if($self -> apache_request -> path_info) { # subject to change
@@ -560,9 +555,96 @@ sub get_content_provider {
 
     return $content_provider_class -> init(
         %params,
-        config => $config -> {'content-provider'} -> {$params{type}},
+        config => $config -> content_providers -> {$params{type}},
         request => $self,
     );
+}
+
+sub _get_url {
+    my($self, $site, $type, $id, $path_info) = @_;
+
+    my $table = $self -> {_alzabo} -> table('Uri_Map');
+    my $url;
+
+    #warn "_get_url($site, $type, $id, $path_info)\n";
+
+    my $urls = $table -> rows_where(
+        where => [
+            [ $table -> column('type'), '=',  $type, ],
+            [ $table -> column('file'), '=', $id, ],
+            [ $table -> column('site'), '=', $site, ],
+        ],
+    );
+
+    if($urls) {
+        while($url = $urls -> next) {
+            my $uri = $url -> select('uri');
+            if($path_info ne '') {
+                if($uri =~ m{/\*$}) {
+                    #warn "Returning [$uri]\n";
+                    return $uri;
+                }
+            }
+            else {
+                #warn "Returning [$uri]\n";
+                return $uri;
+            }
+        }
+    }
+
+    $urls = $table -> rows_where(
+        where => [
+            [ $table -> column('type'), '=',  $type, ],
+            [ $table -> column('file'), '=', $id, ],
+            [ $table -> column('site'), '=', 0, ],
+        ],
+    );
+
+    if($urls) {
+        while($url = $urls -> next) {
+            my $uri = $url -> select('uri');
+            if($path_info ne '') {
+                if($uri =~ m{/\*$}) {
+                    #warn "Returning [$uri]\n";
+                    return $uri;
+                }
+            }
+            else {
+                #warn "Returning [$uri]\n";
+                return $uri;
+            }
+        }
+    }
+}
+
+sub get_url {
+    my($self, %params) = @_;
+
+    return unless defined $params{type} && defined $params{filename};
+
+    my $site = $self -> {site};
+
+    # we need extra path information preserved
+
+    #  /file-manager/* /sys/file-manager
+
+    # if we hack off anything to create a path_info, then we expect * in the url
+    my $path_info = '';
+    my $type = $params{type};
+    my $id = $params{filename};
+    while($id) {
+        my $url = $self -> _get_url($site, $type, $id, $path_info);
+        #warn "$site:$type:$id:$path_info => $url\n";
+        return "$url$path_info"
+            if defined($url) && ( $path_info eq '' || $url =~ s{/\*$}{} );
+        # remove a last component (/string);
+        if($id =~ s{(/[^/]*)$}{}) {
+            $path_info = "$1$path_info";
+        }
+        else {
+            return; # nothing to remove
+        }
+    }
 }
 
 sub factory { $_[0] -> {factory} }
@@ -573,52 +655,51 @@ sub session { $_[0] -> {session} }
 sub providers {
     my($self, %params) = @_;
 
-    my @embeddings;
-    my $cursor = $params{table} -> rows_where(
-        where => [
-            '(',
-              [ $params{table} -> column('site'), '=', $params{site} ],
-                'or',
-              [ $params{table} -> column('site'), '=', 0, ],
-            ')',
-            'and',
-            '(',
-              [ $params{table} -> column('theme'), '=', $params{theme} ],
-                'or',
-              [ $params{table} -> column('theme'), '=', '' ],
-            ')',
-        ]
-    );
+    my $site_cfg = $params{site};
+    my $site_path = $site_cfg -> site_path;
 
-    my $row;
+    my @embeddings;
     my %paths;
-    while($row = $cursor -> next) {
-        my($site, $theme, $path, $type, $filename) = $row -> select(qw(site theme path type file));
-        #warn "Considering $site:$theme:$path:$type:$filename\n";
-        if(defined($paths{$path})
-           && ($site && $theme 
-               || $site && !$paths{$path}{site}
-               || $theme && !$paths{$path}{site} && !$paths{$path}{theme}
-               || !$site && !$theme && !$paths{$path}{site} && !$paths{$path}{theme}
-           )
-           || !defined($paths{$path})
-        ) {
-            $paths{$path} = { 
-                site => $site, 
-                theme => $theme, 
-                type => $type, 
-                filename => $filename 
-            };
+    foreach my $site (@{$site_path || []}) {
+        my $cursor = $params{table} -> rows_where(
+            where => [
+                '(',
+                  [ $params{table} -> column('site'), '=', $site ],
+                    'or',
+                  [ $params{table} -> column('site'), '=', 0, ],
+                ')',
+                'and',
+                '(',
+                  [ $params{table} -> column('theme'), '=', $params{theme} ],
+                    'or',
+                  [ $params{table} -> column('theme'), '=', '' ],
+                ')',
+            ]
+        );
+    
+        my $row;
+        while($row = $cursor -> next) {
+            my($site, $theme, $path, $type, $filename) = $row -> select(qw(site theme path type file));
+            if(defined($paths{$path})
+               && ($site && $theme 
+                   || $site && !$paths{$path}{site}
+                   || $theme && !$paths{$path}{site} && !$paths{$path}{theme}
+                   || !$site && !$theme && !$paths{$path}{site} && !$paths{$path}{theme}
+               )
+               || !defined($paths{$path})
+            ) {
+                $paths{$path} = { 
+                    site => $site, 
+                    theme => $theme, 
+                    type => $type, 
+                    filename => $filename 
+                };
+            }
         }
     }
 
     # now sort the paths...
-    my $cmp_cache = bless { } => __PACKAGE__;
-
-    my @path_list = sort { $cmp_cache -> path_cmp($a, $b) } grep { defined $cmp_cache -> path_cmp($_, $params{uri}) } keys %paths;
-
-    #warn "uri: $params{uri}\n";
-    #warn "Path list: ", join(", ", @path_list), "\n";
+    my @path_list = sort { path_cmp($a, $b) } grep { defined path_cmp($_, $params{uri}) } keys %paths;
 
     my @cps;
     my $startover = 1;
@@ -715,24 +796,27 @@ sub providers {
 # uri => with * means virtual directory
 # filename => with * means replace * with remainder of url
 sub uri_to_filename {
-    my($self, $uri_map, $uri, $site, $cfg) = @_;
+    my($self, $uri_map, $uri, $site_cfg, $cfg) = @_;
 
     my($content_type, $filename);
     my $orig_uri = $uri;
 
-    while($uri) {
-        #warn "Looking for uri [$uri] in site [$site]\n";
-        my $cursor = $uri_map -> rows_where(
-            where => [
-                [ $uri_map -> column('uri'), '=', $uri ],
-                [ $uri_map -> column('site'), '=', $site ],
-            ]
-        );   
+    my $site_path = $site_cfg -> site_path;
 
-        my $file;
-        while($file = $cursor -> next) {
-            ($content_type, $filename) = $file -> select('type', 'file');
-            #warn "Got: [$content_type:$filename]\n";
+    while($uri) {
+        foreach my $site (@{$site_path || []}) {
+            my $cursor = $uri_map -> rows_where(
+                where => [
+                    [ $uri_map -> column('uri'), '=', $uri ],
+                    [ $uri_map -> column('site'), '=', $site ],
+                ]
+            );   
+    
+            my $file;
+            while($file = $cursor -> next) {
+                ($content_type, $filename) = $file -> select('type', 'file');
+                last if defined $cfg -> {$content_type};
+            }
             last if defined $cfg -> {$content_type};
         }
 
@@ -765,7 +849,7 @@ sub DESTROY {
 
     no strict 'refs';
 
-    my $pkg = $self -> config -> {package};
+    my $pkg = $self -> config -> package;
 
     #warn "Cleaning up session\n";
     if(defined $pkg) {
@@ -773,171 +857,16 @@ sub DESTROY {
         undef %{$pkg . "::session"};
     }
 
-    return unless $self -> {_cfg};
+    delete $self -> {_alzabo};
+
+    return unless $self -> {_gst};
     
-    $self -> {_cfg} -> resources -> {dbi} -> free($self -> {_dbh});
+    $self -> {_gst} -> resources -> {dbi} -> free($self -> {_dbh}) if $self -> {_dbh};
     if($self -> {_ldap}) {
-        $self -> {_cfg} -> resources -> {ldap} -> free($self -> {_ldap});
+        $self -> {_gst} -> resources -> {ldap} -> free($self -> {_ldap});
     }
 }
-
-my $component = qr{[^\/\@\|\&]+};
-        
-sub path2regex ($) {
-    my $self;
-    $self = shift if @_ > 1;
-    my $path = shift;
-        
-    return $self -> {_path_regexen} -> {$path}
-        if $self && exists $self -> {_path_regexen} -> {$path};
-        
-    my @bits; #= split(/\|/, $path);
-    foreach my $bit (split(/\s*\|\s*/, $path)) {
-        my @xbits = split(/\s*\&\s*/, $bit);
-    
-        my $t;
-        foreach (reverse @xbits) {
-            $_ = "\Q$_\E";
-            s{^(?:\\!\\!)+(.*)$}{$1};
-            s{^\\!(?:\\!\\!)*(.*)$}{(?:(?!$1)|(?:!$1))};
-            s{\\/(\\/)+}{\\\/+\((?:$component\\\/+)*\)(?:\\\/)*}g;
-            s{\\\*}{\($component\)}g;
-            s{\\/}{\\\/}g;
-            if($t eq '') {
-                $t = $_;
-            }
-            else {
-                $t = "(?(?=$_)(?:$t))"; # hint: regex equiv of ?:
-            }
-        }
-        push @bits, $t;
-    }
-        
-    my $tpath = join(")|(?:", @bits);
-        
-    $tpath = qr{(?:$tpath)};
-        
-    return $tpath unless $self;
-        
-    return $self -> {_path_regexen}->{$path} = $tpath;
-}
-
-my $is_regex = qr{^!|//+|\*|\||\&};
-
-sub path_cmp ($$) {
-    my $self;
-
-    if(@_ > 2) {
-        $self = shift;
-    }
-    else {
-        $self = bless { } => __PACKAGE__;
-    }
-    
-
-    my($a, $b) = @_;
- 
-    return 1 if $a eq $b;
-
-    return $self -> {_cmp_cache} -> {$a} -> {$b}
-        if exists $self -> {_cmp_cache} -> {$a} -> {$b};
-    
-    if($a !~ m{$is_regex}) {
-        return $self -> {_cmp_cache} -> {$a} -> {$b} = ($a cmp $b ? undef : 1) unless $b =~ m{$is_regex};
-
-        my $bb = $self -> path2regex($b);
-        #main::diag("b: $b => $bb");
-        return $self -> {_cmp_cache} -> {$a} -> {$b} = -1 if $a =~ m{^$bb$};
-        return $self -> {_cmp_cache} -> {$a} -> {$b} = undef unless $a =~ m{^$bb};
-        #return $self -> {_cmp_cache} -> {$a} -> {$b} = $b =~ m{\&} ? undef : 1;
-    }
-    else {
-        unless($b =~ m{$is_regex}) {
-            my $aa = $self -> path2regex($a);
-            #main::diag("a: $a => $aa");
-            return $self -> {_cmp_cache} -> {$a} -> {$b} = 1 if $b =~ m{^$aa$};
-            return $self -> {_cmp_cache} -> {$a} -> {$b} = undef unless $b =~ m{^$aa};
-            #return $self -> {_cmp_cache} -> {$a} -> {$b} = ($a =~ m{\&} ? undef : -1);
-        }
-            
-        my %abits = map { $_ => undef } split(/\s*\|\s*/, $a);
-        my %bbits = map { $_ => undef } split(/\s*\|\s*/, $b);
-        my $alla = scalar keys %abits;
-        my $allb = scalar keys %bbits;
-                
-        return $self -> {_cmp_cache} -> {$a} -> {$b} = 1 unless $alla || $allb;
-         
-        return $self -> {_cmp_cache} -> {$a} -> {$b} = 1  if  $alla && !$allb;
-        return $self -> {_cmp_cache} -> {$a} -> {$b} = -1 if !$alla &&  $allb;
-
-        my $aa = $self -> path2regex(join("|", keys %abits));
-        my $bb = $self -> path2regex(join("|", keys %bbits));
-    
-        # if a =~ B, then a <= B
-        #main::diag("b: $bb");
-        foreach my $p (keys %abits) {
-            $abits{$p} = $p =~ m{^$bb$};
-            #main::diag("a: $p => $abits{$p}");
-        }
-        #main::diag("a: $aa");
-        foreach my $p (keys %bbits) {
-            $bbits{$p} = $p =~ m{^$aa$};
-            #main::diag("b: $p => $bbits{$p}");
-        }
-    
-        my $numa = scalar(grep { $_ } values %abits);
-        my $numb = scalar(grep { $_ } values %bbits);
-    
-        #main::diag("$a <=> $b: ($numa/$alla : $numb/$allb)");
-     
-        return $self -> {_cmp_cache} -> {$a} -> {$b} = undef if $numa == 0 && $numb == 0;   # disjoint
-
-        return $self -> {_cmp_cache} -> {$a} -> {$b} = 1 if $numa <= $alla && $numb == $allb;  # A <= B
-
-        return $self -> {_cmp_cache} -> {$a} -> {$b} = -1 if $numa == $alla && $numb < $allb;  # B < A
-
-        return $self -> {_cmp_cache} -> {$a} -> {$b} = 0;  # overlap
-    }
-}
-
-package Gestinanna::Upload;
-
-sub new {
-    my $class = shift;
-    $class = ref $class || $class;
-
-    return bless {
-        @_
-    } => $class;
-}
-
-sub name { $_[0] -> {name} }
-
-sub filename { $_[0] -> {filename} }
-
-sub fh { 
-    my $self = shift;  # return IO::String object
-    my $R = Gestinanna::Request -> instance;
-
-    my $ob = $R -> factory(upload => object_id => $self -> {id});
-    return IO::String -> new($ob -> content);
-}
-
-sub content {
-    my $self = shift;  # return IO::String object
-    my $R = Gestinanna::Request -> instance;
-
-    my $ob = $R -> factory(upload => object_id => $self -> {id});
-    return \($ob -> content);
-}
-
-sub size { $_[0] -> {size} }
-
-sub info { @_ > 1 ? undef : { } }
-
-sub type { $_[0] -> {type} }
-
-sub hash { $_[0] -> {hash} }
-
 
 1;
+
+__END__

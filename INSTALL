@@ -1,12 +1,34 @@
+                           Gestinanna 0.03
                            ---------------
-                           Gestinanna 0.01
-                           ---------------
 
-Install this module, Apache::Gestinanna, and their dependencies.
+Up to date installation instructions are available at 
 
-Install MySQL or PostgreSQL (or any other RDBMS supported by Alzabo).
+    http://gestinanna.sourceforge.net/installation.html  
 
-Run: perl -MGestinanna -e shell
+Install the following packages, modules, and applications:
+
+    o Apache 1.3.x
+    o mod_perl 1.x
+    o AxKit 1.x
+    o Template Toolkit 2.x
+    o Alzabo 0.82 (or newer)
+    o An RDBMS supported by Alzabo, such as MySQL or PostgreSQL
+    o ResourcePool and factories for DBI and (optionally) Net::LDAP
+
+The Gestinanna framework consists of the following packages from CPAN and the sourceforge.net site:
+
+    o Apache::Gestinanna
+    o Gestinanna
+    o Gestinanna::POF
+    o Gestinanna::POF::Repository
+
+
+Schema Creation
+---------------
+
+In the package installation directory (./Gestinanna-0.03/), run: 
+
+  perl -MGestinanna -e shell
 
 This will bring up a shell to manage certain aspects of the framework.  
 This is still a work in progress.
@@ -19,71 +41,35 @@ This is still a work in progress.
   # create and load the database (in this case, a MySQL database 
   # called Gestinanna)
   gst> schema create MySQL Gestinanna
-  gst> schema load Gestinanna
+  gst> schema add_definitions packages
+  gst> schema def add site
+  gst> schema def add sessions
+  gst> schema def add context
+  gst> schema def add repository prefix=Document
+  gst> schema def add repository prefix=View
+  gst> schema def add repository prefix=XSLT
+  gst> schema def add repository prefix=XSM
+  gst> schema def add repository prefix=Portal
+  gst> schema make_live
+
+  # you may view the schema definitions with: 
+  #   package open application base
+  #   package view conf/schema.xml
 
   # create a test site (should be number 1)
-  gst> site create My Test Site
+  gst> site create Root Site
+  gst> site select Root Site
 
+  # create a child site (should be number 2)
+  gst> site clone My Test Site
+
+  # load base package and default theme
+  gst> package install application base
+  gst> package activate application base urls
+  gst> package activate application base security
+  gst> package install theme _default
+  gst> package activate theme _default embeddings
   gst> quit
 
-Now, you can run some of the examples in the examples/ directory to 
-load files into the repository and create an initial config for site
-1. You will need to edit the scripts for them to be able to connect 
-to the RDBMS and load the right schema.
-
-After examples/base.pl and examples/site-config.pl are run, you can 
-add the following uri mappings:
-
-  perl -MGestinanna -e shell
-  gst> set host localhost
-  gst> set password xxxxxx
-  gst> schema load Gestinanna
-  gst> site select 1
-  gst> site uri add /file-manager/* /sys/file-manager
-  gst> site uri add /acct/confirm/* /sys/secure/user/confirm
-  gst> site uri add /acct/create.xml /sys/secure/user/create
-
-You will also need to add the following information to the database 
-directly (the other columns in these tables can be NULL when these 
-are added):
-
-  Attribute table:
-+---------------+-----------------+-----------+---------+-----------+-------+
-| resource_type | resource_id     | user_type | user_id | attribute | value |
-+---------------+-----------------+-----------+---------+-----------+-------+
-| *             | //*             | actor     | 1       | admin     | 65535 |
-| *             | //*@*           | actor     | 1       | admin     | 65535 |
-| *             | //*/            | actor     | 1       | admin     | 65535 |
-| *             | /               | actor     | 1       | admin     | 65535 |
-| *             | /               | actor     | *       | read      |     1 |
-| *             | /home/          | actor     | *       | read      |     1 |
-| *             | /home/SELF/     | actor     | *       | read      |     1 |
-| *             | /home/SELF/*    | actor     | *       | admin     |     1 |
-| *             | /home/SELF//*   | actor     | *       | admin     |     1 |
-| *             | /home/SELF//*/  | actor     | *       | admin     |     1 |
-| *             | /home/SELF//*@* | actor     | *       | admin     |     1 |
-+---------------+-----------------+-----------+---------+-----------+-------+
-
-  Embedding_Map table:
-+------+-------+------------+--------+-----------------------+
-| site | theme | path       | type   | file                  |
-+------+-------+------------+--------+-----------------------+
-|    1 |       | //* | //*/ | portal | /theme/_default/frame |
-+------+-------+------------+--------+-----------------------+
-
-  User table:
-+---------+------+----------------------------------+-------+
-| user_id | uid  | password                         | email |
-+---------+------+----------------------------------+-------+
-|       1 | NULL | 86f3059b228c8acf99e69734b6bb32cc | NULL  |
-+---------+------+----------------------------------+-------+
-
-  Username table:
-+----------+---------+----------------+-----------+
-| username | user_id | password_check | activated |
-+----------+---------+----------------+-----------+
-| admin    |       1 |                | NULL      |
-+----------+---------+----------------+-----------+
-
-(The User and Username table together define a username of admin with 
-a password of admin.)
+See the documentation for Apache::Gestinanna for the Apache 
+configuration requirements.

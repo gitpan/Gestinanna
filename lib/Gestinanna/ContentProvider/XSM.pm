@@ -5,39 +5,46 @@ use base qw(Gestinanna::ContentProvider);
 use Data::UUID;
 use File::Path;
 use File::Spec;
+use File::Spec::Unix;
 use Gestinanna::Request;
 use Gestinanna::XSM;
-use Gestinanna::XSM::Auth;
-use Gestinanna::XSM::Authz;
-use Gestinanna::XSM::Base;
-use Gestinanna::XSM::ContentProvider;
-use Gestinanna::XSM::Diff;
-use Gestinanna::XSM::Digest;
-use Gestinanna::XSM::Gestinanna;
-use Gestinanna::XSM::POF;
-use Gestinanna::XSM::SMTP;
-use Gestinanna::XSM::XMLSimple;
-#use YAML ();
 use Storable ();
 
 use strict;
 no strict 'refs';
 
-sub config {
-    my($class, $config) = @_;
+our @XML_ATTRIBUTES = qw(
+    view-type
+    context-type
+);
 
-# load taglib classes here
-    foreach my $taglib (@{$config -> {taglib}||[]}) {
-        eval "require $taglib;";
-        if($@) {
-            warn "Unable to load $taglib: $@\n";
+sub parse_config {
+    my($class, %params) = @_;
+
+    my $config = { };
+
+    foreach my $node (@{$params{nodes}}) {
+        if($node -> nodeName eq 'cache') {
+            $config -> {cache_dir} = $node -> getAttribute('dir');
         }
-        else {
-            warn "   [XSM - Loaded $taglib]\n";
+        elsif($node -> nodeName eq 'taglib') {
+            my $taglib = $node -> getAttribute('class');
+            eval "require $taglib";
+            next if $@;
+            my $ns = $node -> getAttribute('ns');
+            # can config the taglib at this point
+            $ns = ${"${taglib}::NS"} unless $ns;
+            if(UNIVERSAL::isa($ns, 'ARRAY')) {
+                $config -> {Namespaces} -> {@{$ns}} = ($taglib) x @{$ns};
+            }
+            else {
+                $config -> {Namespaces} -> {$ns} = $taglib;
+            }
         }
     }
-}
 
+    return $config;
+}
 
 sub compile {
     my($self, $cache_dir, $pkg_root, $filename) = @_;
@@ -47,6 +54,7 @@ sub compile {
     my $R = Gestinanna::Request -> instance;
 
     my $content = $self -> retrieve_content( $filename );
+
     return undef unless $self -> is_content_good( $content );
     my $f = $filename;
     $f =~ s{/}{::}g;
@@ -65,7 +73,6 @@ sub compile {
         );
     };
      
-    #warn "Class: $sm_class\n";
     unless($sm_class -> VERSION) {
         # check file cache
         my $cache_file = File::Spec -> catfile($cache_dir,$filename, "v$v");
@@ -73,7 +80,7 @@ sub compile {
             eval { require "$cache_file"; };
             if($@) {
                 warn "Unable to load cached version of $filename $v: $@\n";
-                my $code = Gestinanna::XSM -> compile($content -> data, compiler => $compiler, factory => $R -> factory);
+                my $code = Gestinanna::XSM -> compile($content -> data, compiler => $compiler, factory => $R -> factory, namespaces => $self -> {Namespaces}, filename => $filename, vars => [qw(@ISA %HASA %VIEWS %ALIASES %EDGES $topic)]);
                 #warn "Code: package $sm_class; $code";
                 eval "package $sm_class;\n\nuse strict;\n\n$code;\n1;";
                 if($@) {
@@ -90,7 +97,7 @@ sub compile {
             }
         }
         else {
-            my $code = Gestinanna::XSM -> compile($content -> data, compiler => $compiler, factory => $R -> factory);
+            my $code = Gestinanna::XSM -> compile($content -> data, compiler => $compiler, factory => $R -> factory, namespaces => $self -> {Namespaces}, filename => $filename, vars => [qw(@ISA %HASA %VIEWS %ALIASES %EDGES $topic)]);
             $code .= "our \$FILENAME = \"\Q$filename\E\";\n";
             my $dv = $content -> revision;
             $code .= "our \$VERSION = \"\Q$dv\E\";\n";
@@ -144,10 +151,8 @@ sub init {
     # we want to go through this until we don't call any statemachines
     my $self = bless { %info } => $class;
 
-    my $pkg_root = $info{config} -> {package} || $R -> config -> {package} . "::XSM";
+    my $pkg_root = $R -> config -> package . "::XSM";
     my $filename = $info{filename};
-
-    #warn "file: $filename\n    pkg_root: $pkg_root\n";
 
     #warn "args: ", Data::Dumper -> Dump([$self -> {args}]);
 
@@ -155,13 +160,17 @@ sub init {
     my $sm;
     my($view, $args);
 
-    # TODO: make cache_dir configurable
-    my $cache_dir = $info{config} -> {cache} -> {dir};
+    #warn "info config config keys: ", join(", ", keys %{$info{config}{config}}), "\n";
+    my $cache_dir = $info{config} -> {config} -> {cache_dir};
+
+    # load taglib mappings
+    $self -> {Namespaces} = \%{$info{config} -> {config} -> {Namespaces}};
 
     my $content;
     my $goto_state;
     my $caught_goto = 0;
     $filename = $self -> {filename}; # jic it was changed by the context
+    #warn "filename: $filename\n";
     while($filename) {
         #warn "filename: $filename\n";
         #warn "goto_state: " . Data::Dumper -> Dump([$goto_state]);
@@ -169,11 +178,10 @@ sub init {
         #    $content = $info{axkit_cp} -> factory -> new( $self->{type}, object_id => $filename );
         #}
         #warn "Content of $filename: [" . $content -> data . "]\n";
+        #warn "$self -> compile($cache_dir, $pkg_root, $filename)\n";
         my $sm_class = $self -> compile($cache_dir, $pkg_root, $filename);
         return $sm_class if ref $sm_class;# error page returned
         warn "No class returned\n" and last unless defined $sm_class;
-
-            
 
         my($ostate);
 
@@ -214,6 +222,8 @@ sub init {
                             $context = undef; #$c;
                             $goto_state = { next_state => $e -> arg('next-state'), state => $e -> arg('state'), prev_filename => $filename, args => $e -> arg('args')||{} };
                             $filename = $e -> arg('filename');
+                            $filename = File::Spec::Unix -> rel2abs($filename, $goto_state -> {prev_filename})
+                                if($filename !~ m{^/});
                             next;
                         }
                         elsif($e -> arg('state') ne '') { # no filename - just a regular goto
@@ -272,6 +282,8 @@ sub init {
                     $context = undef; #$c;
                     $goto_state = { prev_state => $ostate, next_state => $e -> arg('next-state'), state => $e -> arg('state'), prev_filename => $filename, args => $e -> arg('args')||{} };
                     $filename = $e -> arg('filename');
+                    $filename = File::Spec::Unix -> rel2abs($filename, $goto_state -> {prev_filename})
+                        if($filename !~ m{^/});
                     next;
                 }
                 else { # no filename - just a regular goto
@@ -349,6 +361,7 @@ sub init {
             $self -> {_context_id} = $id; # make the parent of the next one the one we just returned from
             $self -> set_context($sm -> context)
         }
+        #warn "sm: $sm\n";
     }
 
     #return $sm -> view;
@@ -360,20 +373,23 @@ sub init {
     # really need to follow the inheritance chain of the state, which may go through a %HASA entry
     my @classes = grep { defined } ((ref $sm || $sm), map { $_ -> [0] } $sm -> get_super_path($sm -> state));
     push @classes, Class::ISA::super_path($_) for @{[@classes]}; # make copy of @classes first so we don't spin
-    warn "classes: ", join("; ", @classes), "\n";
+    #warn "classes: ", join("; ", @classes), "\n";
     my @path = map { ($_ -> filename) } grep { UNIVERSAL::can($_, 'filename') } @classes;
 
+    $self -> {_path} = \@path;
+
     #warn "Superpath for " . $sm -> state . ": ", join(", ", $sm -> get_super_path($sm -> state)), "\n";
-    warn "file paths: ", join("; ", @path), "\n";
+    #warn "file paths: ", join("; ", @path), "\n";
 
     #my @views = ($filename);
 
     foreach my $p (@path) {
         #warn "Trying $p/$view\n";
+        #warn "type: ", $info{config} -> {params} -> {'view-type'}, "\n";
         my $cp = $R -> get_content_provider(
             args => $args,
             filename => "$p/$view",
-            type => $info{config} -> {'view-type'},
+            type => $info{config} -> {params} -> {'view-type'},
             include_path => \@path,
         );
         if($cp) {
@@ -476,7 +492,12 @@ sub dom {
             my $l = $args -> {out};
             for (@ids) {
                 #warn "Looking for [$_] in " . Data::Dumper -> Dump([$l]);
-                $l = (ref $l && exists $l -> {$_}) ? $l -> {$_} : undef;
+                if(UNIVERSAL::isa($l, 'ARRAY') && m{^\d+$}) {
+                    $l = (exists $l -> [$_]) ? $l -> [$_] : undef;
+                }
+                else {
+                    $l = (ref $l && exists $l -> {$_}) ? $l -> {$_} : undef;
+                }
                 last unless defined $l;
             }
             #$l = (ref $l && exists $l -> {$_}) ? $l -> {$_} : last for @ids;
@@ -547,7 +568,12 @@ sub dom {
                 #$l = (ref($l) && exists $l -> {$_}) ? $l -> {$_} : last for @ids;
                 for (@ids) {
                     #warn "Looking for [$_] in " . Data::Dumper -> Dump([$l]);
-                    $l = (ref $l && exists $l -> {$_}) ? $l -> {$_} : undef;
+                    if(UNIVERSAL::isa($l, 'ARRAY') && m{^\d+$}) {
+                        $l = (exists $l -> [$_]) ? $l -> [$_] : undef;
+                    }
+                    else {
+                        $l = (ref $l && exists $l -> {$_}) ? $l -> {$_} : undef;
+                    }
                     last unless defined $l;
                 }
                 $l = $l -> {value} if UNIVERSAL::isa($l, 'HASH') && exists($l -> {'value'});
@@ -560,6 +586,39 @@ sub dom {
         }
     }
 
+    my $link_elements = $dom -> findnodes('//link');
+    my @path = @{$self -> {_path}};
+    my %urls;
+    my $R = Gestinanna::Request -> instance;
+    foreach my $link_node ($link_elements -> get_nodelist) {
+        my $link = $link_node -> getAttribute('url');
+        #warn "Link: $link\n";
+        next unless $link =~ m{^[^:]+:[^/]}; # don't translate unless of the form <type>:<id> (with <id> not starting with /)
+        if(!exists($urls{"$link"})) {
+            my($type, $id) = split(/:/, $link, 2);
+            foreach my $p (@path) {
+                my $trial_id = File::Spec::Unix -> rel2abs($id, $p);
+                # we want to link to the url that is closest to the current url
+                my $t = $R -> get_url(type => $type, filename => $trial_id);
+                if(defined $t) {
+                    $urls{$link} = $t;
+                    last;
+                }
+            }
+        }
+        my $target;
+        if(!defined($urls{$link})) {
+            # dummy link to page explaining broken link
+            $target = $R -> get_url(type => 'document', filename => '/sys/unknown_object');
+        }
+        else {   
+            $target = $urls{$link};
+        }
+        $link_node -> setAttribute(url => $target);
+    }
+
+
+
     return $dom;
 }
 
@@ -567,7 +626,7 @@ sub get_context {
     my($self) = @_;
 
     #warn "$self -> get_context\n";
-    return unless defined $self -> {config} -> {'context-type'};
+    return unless defined $self -> {config} -> {params} -> {'context-type'};
 
     my $R = Gestinanna::Request -> instance;
 
@@ -582,11 +641,11 @@ sub get_context {
 
     return unless defined $id;
 
-    my $context = $R -> factory -> new($self -> {config} -> {'context-type'} => object_id => $id);
+    my $context = $R -> factory -> new($self -> {config} -> {params} -> {'context-type'} => object_id => $id);
 
     #warn "Loading context $id  filename: ", $context -> filename, "\n";
 
-    if($context -> filename ne $self -> {filename}) {
+    if($context -> filename ne '' && defined($context -> filename) && $context -> filename ne $self -> {filename}) {
         $self -> {filename} = $context -> filename; # probably want some other logic here
     }
 
@@ -596,7 +655,7 @@ sub get_context {
 sub set_context {
     my($self, $data) = @_;
 
-    return unless defined $self -> {config} -> {'context-type'};
+    return unless defined $self -> {config} -> {params} -> {'context-type'};
 
     my $R = Gestinanna::Request -> instance;
 
@@ -606,23 +665,26 @@ sub set_context {
 
     $id = $self -> {_uuid} -> create_str();
 
-    $context = $R -> factory -> new($self -> {config} -> {'context-type'} => object_id => $id);
+    $context = $R -> factory -> new($self -> {config} -> {params} -> {'context-type'} => object_id => $id);
 
     while($context -> is_live) {
         $id = $self -> {_uuid} -> create_str();
-        $context = $R -> factory -> new($self -> {config} -> {'context-type'} => object_id => $id);
+        $context = $R -> factory -> new($self -> {config} -> {params} -> {'context-type'} => object_id => $id);
     }
 
     $self -> {_context_id} = $id;
 
-    $context -> parent($old_id);
+    my $old_context = $R -> factory -> new($self -> {config} -> {params} -> {'context-type'} => object_id => $old_id);
+
+    $context -> parent_id($old_id) if $old_context -> is_live;
     $context -> context($data);
     $context -> filename($self -> {filename});
-    $context -> user_id(undef);
-    $context -> user_id($R -> factory -> {actor} -> object_id)
-        if defined $R -> factory -> {actor};
+    my $user_id = 'unknown';
+    $user_id = $R -> factory -> {actor} -> object_id if defined $R -> factory -> {actor};
+    $user_id = 'unknown' unless defined $user_id && $user_id ne '';
+    $context -> user_id($user_id);
 
-#    warn "Saving context $id: $data\n";
+    #warn "Saving context $id: ", $self -> {filename}, "\n";
 
     $context -> save;
 }

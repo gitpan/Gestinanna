@@ -4,11 +4,9 @@
 
 package Gestinanna::XSM::SMTP;
 
-our @ISA = qw(Gestinanna::XSM);
+use base qw(Gestinanna::XSM);
 
 our $NS = 'http://ns.gestinanna.org/smtp';
-
-__PACKAGE__ -> register;
 
 sub start_document {
     return "#initialize smtp namespace\n";

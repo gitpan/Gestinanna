@@ -1,0 +1,49 @@
+0.02 - 26 Jul 2004
+
+ o Basic workflow support.  See the listserv package for an example.
+
+ o Added a package system.  Shell support is not complete, but 
+   sufficient for installing a package.
+
+ o Moved sample pages into packages installable via the package system.
+
+ o Added site configuration single inheritance.
+
+ o Extensive unit tests in the low-level modules.  Not yet complete.
+
+ o Split state machine XML schema into two namespaces: state machine 
+   and scripting.
+
+ o Added untested code for future support of workflows.
+
+ o shell tool may be configured not to use a pager.
+
+ o Added `site clone' command to the shell.  Both cloning and creating 
+   a site will now create a site configuration as well.
+
+ o Added `site config' command to the shell to edit an existing site's 
+   configuration.  The resulting configuration must be parsable by 
+   XML::LibXML.
+
+ o The `site uri add' command now takes an argument to indicate the 
+   object type the URI refers to.
+
+ o Gestinanna::Request::get_url added to resolve an object to a url 
+   (for use by Apache::AxKit::Provider::Gestinanna).
+
+ o Alzabo naming routine updated for Alzabo 0.82.
+
+ o Namespace handlers for XSM scripts are now configurable on a per-
+   site basis.
+
+ o Namespaces can be specified for namespace handlers, overriding the 
+   default.  This is useful for using different handlers that offer 
+   the same interface but work with different backends.
+
+ o Configuration information specific to a content handler type is now 
+   enclosed in a <config/> tag.
+
+
+0.01 - 27 Feb 2004
+
+Initial release.

@@ -1,0 +1,915 @@
+<?xml version="1.0"?>
+<specification>
+  <module name="Gestinanna::XSM::Base">
+    <interface>
+      <constructor/>
+      <method name="new">
+        <dependence method="generate_validators"/>
+      </method>
+      <method name="add_data">
+        <dependence method="new"/>
+      </method>
+      <method name="alias_state"/>
+      <method name="can">
+        <dependence method="_can_hasa"/>
+        <dependence method="_make_can_code"/>
+      </method>
+      <method name="_can_hasa">
+        <dependence method="_make_hasa_can_code"/>
+      </method>
+      <method name="_make_can_code"/>
+      <method name="_make_hasa_can_code"/>
+      <method name="clear_context">
+        <dependence method="new"/>
+      </method>
+      <method name="clear_data">
+        <dependence method="new"/>
+      </method>
+      <method name="context">
+        <dependence method="new"/>
+      </method>
+      <method name="data">
+        <dependence method="new"/>
+      </method>
+      <method name="filename"/>
+      <method name="generate_validators">
+        <dependence method="_generate_states"/>
+      </method>
+      <method name="_generate_states">
+        <dependence method="get_super_path"/>
+        <dependence method="_merge_state_defs"/>
+      </method>
+      <method name="_merge_state_defs"/>
+      <method name="get_super_path"/>
+      <method name="invalid">
+        <dependence method="transitioned"/>
+      </method>
+      <method name="is_not_terminal_state">
+        <dependence method="transitioned"/>
+      </method>
+      <method name="log"/>
+      <method name="messages">
+        <dependence method="transitioned"/>
+      </method>
+      <method name="missing">
+        <dependence method="transitioned"/>
+      </method>
+      <method name="process">
+        <dependence method="clear_data"/>
+        <dependence method="add_data"/>
+        <dependence method="select_state"/>
+        <dependence method="transit"/>
+      </method>
+      <method name="select_state">
+        <dependence method="_flatten_hash"/>
+        <dependence method="generate_validators"/>
+        <dependence method="data"/>
+      </method>
+      <method name="_flatten_hash"/>
+      <method name="selected_state">
+        <dependence method="transitioned"/>
+      </method>
+      <method name="state">
+        <dependence method="alias_state"/>
+      </method>
+      <method name="transit">
+        <dependence method="_transit"/>
+        <dependence method="state"/>
+        <dependence method="alias_state"/>
+      </method>
+      <method name="_transit">
+        <dependence method="can"/>
+      </method>
+      <method name="transitioned">
+        <dependence method="process"/>
+      </method>
+      <method name="unknown">
+        <dependence method="transitioned"/>
+      </method>
+      <method name="view">
+        <dependence method="transitioned"/>
+      </method>
+    </interface>
+    <dependence module="Gestinanna::Util"/>
+    <dependence module="Gestinanna::Request"/>
+  </module>
+  <module name="Gestinanna::XSM::Expression">
+    <interface>
+      <method name="axis_attribute"/>
+      <method name="axis_child"/>
+      <method name="axis_child_or_self">
+        <dependence method="axis_child"/>
+      </method>
+      <method name="axis_descendent">
+        <dependence method="axis_child"/>
+      </method>
+      <method name="axis_descendent_or_self">
+        <dependence method="axis_descendent"/>
+      </method>
+      <method name="axis_method"/>
+      <method name="axis_self"/>
+      <method name="set_element">
+        <dependence method="axis_child"/>
+      </method>
+      <method name="xsm_cmp"/>
+      <method name="xsm_range"/>
+    </interface>
+  </module>
+  <module name="Gestinanna::XSM::Expression::Parser">
+    <interface>
+      <constructor/>
+      <method name="debugging"/>
+      <method name="error"/>
+      <method name="lex"/>
+      <method name="parse">
+        <dependence method="lex"/>
+      </method>
+      <method name="new"/>
+    </interface>
+    <dependence module="Gestinanna::XSM::Expression"/>
+  </module>
+  <module name="Gestinanna::XSM">
+    <interface>
+      <method name="append_state"/>
+      <method name="compile"/>
+      <method name="compile_expr"/>
+      <method name="enter_param"/>
+      <method name="enter_state"/>
+      <method name="handled_namespaces"/>
+      <method name="is_sm_namespace"/>
+      <method name="leave_param"/>
+      <method name="leave_state"/>
+      <method name="makeSingleQuoted"/>
+      <method name="ns_handler"/>
+      <method name="pop_state"/>
+      <method name="push_state"/>
+      <method name="register"/>
+      <method name="reset_state"/>
+      <method name="semi"/>
+      <method name="set_state"/>
+      <method name="state"/>
+      <method name="static_expr"/>
+    </interface>
+    <dependence module="Gestinanna::XSM::Base"/>
+    <dependence module="Gestinanna::XSM::Expression::Parser"/>
+    <dependence module="Gestinanna::XSM::LibXMLSupport"/>
+    <dependence module="Gestinanna::XSM::Script"/>
+    <dependence module="Gestinanna::XSM::StateMachine"/>
+    <dependence module="Gestinanna::Request"/>
+  </module>
+  <module name="Gestinanna::Util">
+    <interface>
+      <method name="path2regex"/>
+      <method name="path_cmp">
+        <dependence method="path2regex"/>
+      </method>
+      <method name="deep_merge_hash"/>
+    </interface>
+  </module>
+  <module name="Gestinanna::Authz">
+    <interface>
+      <constructor/>
+      <method name="can_grant">
+        <dependence method="query_attributes"/>
+      </method>
+      <method name="fetch_acls">
+        <dependence method="set_point_attributes"/>
+      </method>
+      <method name="grant">
+        <dependence method="can_grant"/>
+        <dependence method="set_point_attributes"/>
+      </method>
+      <method name="has_attribute">
+        <dependence method="_attr_and_eq"/>
+        <dependence method="_attr_or_eq"/>
+        <dependence method="query_attributes"/>
+      </method>
+      <method name="_attr_and_eq"/>
+      <method name="_attr_or_eq"/>
+      <method name="query_acls">
+        <dependence method="fetch_acls"/>
+      </method>
+      <method name="query_attributes">
+        <dependence method="query_acls"/>
+      </method>
+      <method name="query_point_attributes">
+        <dependence method="set_point_attributes"/>
+      </method>
+      <method name="set_point_attributes"/>
+      <method name="new"/>
+      <method name="fetch_groups"/>
+      <method name="fetch_resource_groups"/>
+    </interface>
+    <dependence module="Gestinanna::Util"/>
+    <dependence module="Gestinanna::SchemaManager::Schema"/>
+  </module>
+  <module name="Gestinanna::SiteConfiguration">
+    <interface>
+      <method name="anonymous_id"/>
+      <method name="build_factory">
+        <dependence method="factory_class"/>
+        <dependence method="build_object_class"/>
+        <dependence method="data_providers"/>
+      </method>
+      <method name="build_object_class"/>
+      <method name="content_providers">
+        <dependence method="parent"/>
+      </method>
+      <method name="content_types">
+        <dependence method="parent"/>
+      </method>
+      <method name="data_providers">
+        <dependence method="parent"/>
+      </method>
+      <method name="data_types">
+        <dependence method="parent"/>
+      </method>
+      <method name="factory">
+        <dependence method="factory_class"/>
+        <dependence method="build_factory"/>
+        <dependence method="tag_path"/>
+        <dependence method="site_path"/>
+      </method>
+      <method name="factory_class">
+        <dependence method="package"/>
+      </method>
+      <method name="new"/>
+      <method name="new_cookie">
+        <dependence method="parent"/>
+      </method>
+      <method name="package">
+        <dependence method="parent"/>
+      </method>
+      <method name="parent">
+        <dependence method="parse_config"/>
+      </method>
+      <method name="parse_config">
+         <dependence method="new"/>
+      </method>
+      <method name="parse_provider_config"/>
+      <method name="provider_class"/>
+      <method name="security_types">
+        <dependence method="parent"/>
+      </method>
+      <method name="session_cookie"/>
+      <method name="session_cookie_field">
+        <dependence method="parent"/>
+      </method>
+      <method name="session_params">
+        <dependence method="parent"/>
+      </method>
+      <method name="site_path">
+        <dependence method="parent"/>
+      </method>
+      <method name="store_config"/>
+      <method name="store_provider_config"/>
+      <method name="tag_path">
+        <dependence method="parent"/>
+      </method>
+    </interface>
+    <dependence module="Gestinanna::Request"/>
+  </module>
+  <module name="Gestinanna::Request">
+    <interface>
+      <constructor/>
+      <constructor id="instance" name="instance"/>
+      <method name="config"/>
+      <method name="do_redirect"/>
+      <method name="embeddings"/>
+      <method name="error"/>
+      <method name="error_provider">
+        <dependence method="get_content_provider"/>
+      </method>
+      <method name="factory"/>
+      <method name="get_content_provider">
+        <dependence method="factory"/>
+        <dependence method="providers"/>
+      </method>
+      <method name="get_url"/>
+      <method name="in_mod_perl"/>
+      <method name="init"/>
+      <method name="providers"/>
+      <method name="read_session"/>
+      <method name="session"/>
+      <method name="upload"/>
+      <method name="uri_to_filename"/>
+      <method name="instance"/>
+      <method name="new"/>
+      <method name="path2regex"/>
+      <method name="path_cmp"/>
+    </interface>
+    <dependence module="Gestinanna::Authz"/>
+    <dependence module="Gestinanna::SchemaManager::Schema"/>
+    <dependence module="Gestinanna::Upload"/>
+    <dependence module="Gestinanna::Util"/>
+    <dependence module="Gestinanna::SiteConfiguration" ignore="yes"/>
+  </module>
+  <module name="Gestinanna::ContentProvider">
+    <interface>
+      <method name="dom">
+        <dependence method="retrieve_content"/>
+      </method>
+      <method name="init">
+        <dependence method="is_content_good"/>
+      </method>
+      <method name="is_content_good"/>
+      <method name="may_exec">
+        <dependence method="init"/>
+      </method>
+      <method name="mtime">
+        <dependence method="init"/>
+      </method>
+      <method name="retrieve_content">
+        <dependence method="init"/>
+      </method>
+    </interface>
+    <dependence module="Gestinanna::Request"/>
+  </module>
+  <module name="Gestinanna::ContentProvider::Document">
+    <interface>
+      <method name="content"/>
+      <method name="mtime"/>
+    </interface>
+    <dependence module="Gestinanna::ContentProvider"/>
+  </module>
+  <module name="Gestinanna::ContentProvider::XSM">
+    <interface>
+      <method name="compile"/>
+      <method name="config"/>
+      <method name="content"/>
+      <method name="dom"/>
+      <method name="get_context"/>
+      <method name="init"/>
+      <method name="may_exec"/>
+      <method name="remove_contexts"/>
+      <method name="set_context"/>
+    </interface>
+    <dependence module="Gestinanna::ContentProvider"/>
+    <dependence module="Gestinanna::Request"/>
+    <dependence module="Gestinanna::XSM"/>
+  </module>
+  <module name="Gestinanna::ContentProvider::Portal">
+    <interface>
+      <method name="config"/>
+      <method name="content"/>
+      <method name="dom"/>
+      <method name="init"/>
+    </interface>
+    <dependence module="Gestinanna::ContentProvider"/>
+  </module>
+  <module name="Gestinanna::ContentProvider::TT2">
+    <interface>
+      <method name="content"/>
+    </interface>
+    <dependence module="Gestinanna::ContentProvider"/>
+    <dependence module="Apache::Template::Provider::Gestinanna"/>
+  </module>
+  <module name="Gestinanna::XSM::Gestinanna">
+    <interface>
+      <method name="characters"/>
+      <method name="comment"/>
+      <method name="end_document"/>
+      <method name="end_element"/>
+      <method name="filter_multiline"/>
+      <method name="filter_normalize_linebreaks"/>
+      <method name="processing_instruction"/>
+      <method name="start_document"/>
+      <method name="start_element"/>
+      <method name="valid_filename"/>
+      <method name="xsm_alzabo_schema"/>
+      <method name="xsm_config"/>
+      <method name="xsm_ldap_rootdse"/>
+      <method name="xsm_ldap_schema"/>
+      <method name="xsm_split_path"/>
+    </interface>
+    <dependence module="Gestinanna::XSM"/>
+  </module>
+  <module name="Gestinanna::XSM::Authz">
+    <interface>
+      <method name="characters"/>
+      <method name="comment"/>
+      <method name="end_document"/>
+      <method name="end_element"/>
+      <method name="processing_instruction"/>
+      <method name="start_document"/>
+      <method name="start_element"/>
+      <method name="xsm_has_access"/>
+    </interface>
+    <dependence module="Gestinanna::XSM"/>
+    <dependence module="Gestinanna::Authz"/>
+  </module>
+  <module name="Gestinanna::XSM::Auth">
+    <interface>
+      <method name="characters"/>
+      <method name="comment"/>
+      <method name="end_document"/>
+      <method name="end_element"/>
+      <method name="processing_instruction"/>
+      <method name="start_document"/>
+      <method name="start_element"/>
+      <method name="valid_authentic"/>
+      <method name="valid_password"/>
+      <method name="valid_username"/>
+      <method name="xsm_encode_password"/>
+      <method name="xsm_set_actor"/>
+    </interface>
+    <dependence module="Gestinanna::XSM"/>
+  </module>
+  <module name="Gestinanna::XSM::POF">
+    <interface>
+      <method name="characters"/>
+      <method name="comment"/>
+      <method name="end_document"/>
+      <method name="end_element"/>
+      <method name="new_object"/>
+      <method name="processing_instruction"/>
+      <method name="start_document"/>
+      <method name="start_element"/>
+      <method name="xsm_new"/>
+      <method name="xsm_types"/>
+      <method name="xsm_valid_type"/>
+    </interface>
+    <dependence module="Gestinanna::XSM"/>
+    <dependence module="Gestinanna::Request"/>
+  </module>
+  <module name="Gestinanna::XSM::Diff">
+    <interface>
+      <method name="characters"/>
+      <method name="comment"/>
+      <method name="end_document"/>
+      <method name="end_element"/>
+      <method name="processing_instruction"/>
+      <method name="start_document"/>
+      <method name="start_element"/>
+      <method name="xsm_three_way"/>
+      <method name="xsm_three_way_middle_revision"/>
+      <method name="xsm_two_way"/>
+      <method name="xsm_two_way_s"/>
+    </interface>
+    <dependence module="Gestinanna::XSM"/>
+  </module>
+  <module name="Gestinanna::XSM::ContentProvider">
+    <interface>
+      <method name="characters"/>
+      <method name="comment"/>
+      <method name="end_document"/>
+      <method name="end_element"/>
+      <method name="process"/>
+      <method name="processing_instruction"/>
+      <method name="start_document"/>
+      <method name="start_element"/>
+    </interface>
+    <dependence module="Gestinanna::XSM"/>
+  </module>
+  <module name="Gestinanna::XSM::Digest">
+    <interface>
+      <method name="characters"/>
+      <method name="comment"/>
+      <method name="end_document"/>
+      <method name="end_element"/>
+      <method name="processing_instruction"/>
+      <method name="start_document"/>
+      <method name="start_element"/>
+      <method name="xsm_digests"/>
+      <method name="xsm_has_digest"/>
+      <method name="xsm_md5">
+        <dependence method="xsm_has_digest"/>
+      </method>
+      <method name="xsm_md5_hex">
+        <dependence method="xsm_has_digest"/>
+      </method>
+      <method name="xsm_sha1">
+        <dependence method="xsm_has_digest"/>
+      </method>
+      <method name="xsm_sha1_hex">
+        <dependence method="xsm_has_digest"/>
+      </method>
+    </interface>
+    <dependence module="Gestinanna::XSM"/>
+  </module>
+  <module name="Gestinanna::Shell">
+    <interface>
+      <method name="find_commands"/>
+      <method name="interpret"/>
+      <method name="read_file"/>
+      <method name="shell"/>
+    </interface>
+    <dependence module="Gestinanna::Shell::Base"/>
+    <dependence module="Gestinanna::Exception"/>
+  </module>
+  <module name="Gestinanna::Shell::Site">
+    <interface>
+      <method name="do_clone"/>
+      <method name="do_config"/>
+      <method name="do_create"/>
+      <method name="do_delete"/>
+      <method name="do_help"/>
+      <method name="do_list"/>
+      <method name="do_select"/>
+      <method name="do_site"/>
+    </interface>
+    <dependence module="Gestinanna::SchemaManager::Schema"/>
+    <dependence module="Gestinanna::Shell::Base"/>
+    <dependence module="Gestinanna::SchemaManager"/>
+  </module>
+  <module name="Gestinanna::Shell::Schema">
+    <interface>
+      <method name="do_create"/>
+      <method name="do_delete"/>
+      <method name="do_docs"/>
+      <method name="do_drop"/>
+      <method name="do_help"/>
+      <method name="do_list"/>
+      <method name="do_load"/>
+      <method name="do_schema"/>
+      <method name="do_upgrade"/>
+    </interface>
+    <dependence module="Gestinanna::SchemaManager::Schema"/>
+    <dependence module="Gestinanna::Shell::Base"/>
+  </module>
+  <module name="Gestinanna::Shell::Base">
+    <interface>
+      <method name="alzabo_params"/>
+      <method name="do_bug"/>
+      <method name="do_cd"/>
+      <method name="do_help"/>
+      <method name="do_pwd"/>
+      <method name="do_quit"/>
+      <method name="do_readfile"/>
+      <method name="do_set"/>
+      <method name="edit"/>
+      <method name="edit_xml"/>
+      <method name="init_commands"/>
+      <method name="interpret"/>
+      <method name="page"/>
+    </interface>
+  </module>
+  <module name="Gestinanna::XSM::XMLSimple">
+    <interface>
+      <method name="characters"/>
+      <method name="comment"/>
+      <method name="end_document"/>
+      <method name="end_element"/>
+      <method name="processing_instruction"/>
+      <method name="start_document"/>
+      <method name="start_element"/>
+    </interface>
+    <dependence module="Gestinanna::XSM"/>
+  </module>
+  <module name="Gestinanna::POF::Secure::Gestinanna::RepositoryObject">
+    <interface>
+      <method name="save"/>
+    </interface>
+  </module>
+  <module name="Gestinanna::XSM::LibXMLSupport">
+    <interface>
+      <method name="close_uri"/>
+      <method name="get_provider"/>
+      <method name="match_uri"/>
+      <method name="open_uri"/>
+      <method name="read_uri"/>
+      <method name="reset"/>
+    </interface>
+  </module>
+  <module name="Apache::Template::Provider::Gestinanna">
+    <interface>
+      <method name="DEBUG_LEVEL"/>
+      <method name="SET_DEBUG_LEVEL"/>
+      <method name="fetch"/>
+    </interface>
+    <dependence module="Gestinanna::Request"/>
+  </module>
+  <module name="Gestinanna">
+    <interface>
+      <method name="shell"/>
+      <method name="tkgui"/>
+    </interface>
+    <dependence module="Gestinanna::SchemaManager::Schema"/>
+    <dependence module="Gestinanna::Shell"/>
+  </module>
+  <module name="Gestinanna::POF::Secure::Gestinanna">
+    <interface>
+      <method name="has_access"/>
+    </interface>
+    <dependence module="Gestinanna::Authz"/>
+  </module>
+  <module name="Gestinanna::XSM::SMTP">
+    <interface>
+      <method name="characters"/>
+      <method name="comment"/>
+      <method name="end_document"/>
+      <method name="end_element"/>
+      <method name="message"/>
+      <method name="processing_instruction"/>
+      <method name="sendmail"/>
+      <method name="start_document"/>
+      <method name="start_element"/>
+    </interface>
+    <dependence module="Gestinanna::XSM"/>
+  </module>
+  <module name="Gestinanna::Exception">
+    <interface>
+      <method name="bool"/>
+      <method name="to_string"/>
+      <method name="exception"/>
+      <method name="class"/>
+      <method name="value"/>
+    </interface>
+  </module>
+  <module name="Gestinanna::Shell::Package">
+    <interface>
+      <method name="do_clear"/>
+      <method name="do_create"/>
+      <method name="do_delete"/>
+      <method name="do_edit"/>
+      <method name="do_help"/>
+      <method name="do_install"/>
+      <method name="do_list">
+        <dependence method="do_open"/>
+      </method>
+      <method name="do_list_packages"/>
+      <method name="do_open">
+        <dependence method="do_list_packages"/>
+      </method>
+      <method name="do_package"/>
+      <method name="do_set"/>
+      <method name="do_store"/>
+      <method name="do_view">
+        <dependence method="do_list"/>
+      </method>
+      <method name="do_write">
+        <dependence method="do_create"/>
+      </method>
+      <method name="do_activate"/>
+      <method name="do_add_tagged"/>
+      <method name="do_close"/>
+      <method name="do_deactivate"/>
+      <method name="do_get"/>
+      <method name="do_load"/>
+      <method name="do_recommend"/>
+      <method name="do_submit"/>
+      <method name="do_update"/>
+    </interface>
+    <dependence module="Gestinanna::SchemaManager::Schema"/>
+    <dependence module="Gestinanna::Shell::Base"/>
+    <dependence module="Gestinanna::Package"/>
+    <dependence module="Gestinanna::PackageManager"/>
+  </module>
+  <module name="Gestinanna::Package">
+    <interface>
+      <constructor/>
+      <method name="add_file">
+        <dependence method="create"/>
+      </method>
+      <method name="add_files_from_tags">
+        <dependence method="add_file"/>
+      </method>
+      <method name="author_email">
+        <dependence method="new"/>
+      </method>
+      <method name="author_name">
+        <dependence method="new"/>
+      </method>
+      <method name="author_url">
+        <dependence method="new"/>
+      </method>
+      <method name="conf_file">
+        <dependence method="new"/>
+      </method>
+      <method name="create">
+        <dependence method="name"/>
+        <dependence method="version"/>
+      </method>
+      <method name="description">
+        <dependence method="new"/>
+      </method>
+      <method name="devel_email">
+        <dependence method="new"/>
+      </method>
+      <method name="embedding_struct">
+        <dependence method="embeddings"/>
+      </method>
+      <method name="embeddings">
+        <dependence method="parse_conf"/>
+        <dependence method="get_content"/>
+      </method>
+      <method name="get_content">
+        <dependence method="has_file"/>
+      </method>
+      <method name="has_file">
+        <dependence method="list_files"/>
+      </method>
+      <method name="install">
+        <dependence method="get_content"/>
+        <dependence method="security_struct"/>
+        <dependence method="embedding_struct"/>
+        <dependence method="url_struct"/>
+      </method>
+      <method name="list_files">
+        <dependence method="new"/>
+      </method>
+      <method name="name">
+        <dependence method="new"/>
+      </method>
+      <method name="new"/>
+      <method name="notes">
+        <dependence method="new"/>
+      </method>
+      <method name="open">
+        <dependence method="new"/>
+      </method>
+      <method name="parse_conf">
+        <dependence method="open"/>
+      </method>
+      <method name="security">
+        <dependence method="parse_conf"/>
+        <dependence method="get_content"/>
+      </method>
+      <method name="security_struct">
+        <dependence method="security"/>
+      </method>
+      <method name="support_email">
+        <dependence method="new"/>
+      </method>
+      <method name="type">
+        <dependence method="new"/>
+      </method>
+      <method name="update_url">
+        <dependence method="new"/>
+      </method>
+      <method name="url">
+        <dependence method="new"/>
+      </method>
+      <method name="url_struct">
+        <dependence method="urls"/>
+      </method>
+      <method name="urls">
+        <dependence method="parse_conf"/>
+        <dependence method="get_content"/>
+      </method>
+      <method name="version">
+        <dependence method="new"/>
+      </method>
+      <method name="write_configuration">
+        <dependence method="type"/>
+      </method>
+      <method name="write_package">
+        <dependence method="add_files_from_tags"/>
+        <dependence method="write_configuration"/>
+        <dependence method="create"/>
+      </method>
+    </interface>
+  </module>
+  <module name="Gestinanna::PackageManager">
+    <interface>
+      <method name="load">
+        <dependence method="packages"/>
+      </method>
+      <method name="new"/>
+      <method name="packages">
+        <dependence method="types"/>
+      </method>
+      <method name="store"/>
+      <method name="types">
+        <dependence method="new"/>
+      </method>
+      <method name="write"/>
+    </interface>
+    <dependence module="Gestinanna::Package"/>
+  </module>
+  <module name="Gestinanna::XSM::StateMachine">
+    <interface>
+      <method name="characters"/>
+      <method name="comment"/>
+      <method name="end_document"/>
+      <method name="end_element"/>
+      <method name="path_to_dotted"/>
+      <method name="processing_instruction"/>
+      <method name="start_document"/>
+      <method name="start_element"/>
+    </interface>
+    <dependence module="Gestinanna::Request"/>
+  </module>
+  <module name="Gestinanna::XSM::Script">
+    <interface>
+      <method name="characters"/>
+      <method name="comment"/>
+      <method name="end_document"/>
+      <method name="end_element"/>
+      <method name="path_to_dotted"/>
+      <method name="processing_instruction"/>
+      <method name="start_document"/>
+      <method name="start_element"/>
+      <method name="xsm_clone"/>
+      <method name="xsm_concat"/>
+      <method name="xsm_contains"/>
+      <method name="xsm_count"/>
+      <method name="xsm_defined"/>
+      <method name="xsm_dump"/>
+      <method name="xsm_ends_with"/>
+      <method name="xsm_false"/>
+      <method name="xsm_gmt_now"/>
+      <method name="xsm_is_a"/>
+      <method name="xsm_last"/>
+      <method name="xsm_list"/>
+      <method name="xsm_not"/>
+      <method name="xsm_null"/>
+      <method name="xsm_number"/>
+      <method name="xsm_position"/>
+      <method name="xsm_splice"/>
+      <method name="xsm_starts_with"/>
+      <method name="xsm_string"/>
+      <method name="xsm_string_cmp"/>
+      <method name="xsm_string_length"/>
+      <method name="xsm_substring"/>
+      <method name="xsm_substring_after"/>
+      <method name="xsm_substring_before"/>
+      <method name="xsm_sum"/>
+      <method name="xsm_translate"/>
+      <method name="xsm_true"/>
+      <method name="xsm_unique"/>
+    </interface>
+  </module>
+  <module name="Gestinanna::XSM::Workflow">
+    <interface>
+      <method name="characters"/>
+      <method name="comment"/>
+      <method name="end_document"/>
+      <method name="end_element"/>
+      <method name="manage_text"/>
+      <method name="processing_instruction"/>
+      <method name="start_document"/>
+      <method name="start_element"/>
+      <method name="xsm_create"/>
+      <method name="xsm_fetch"/>
+      <method name="xsm_find"/>
+    </interface>
+    <dependence module="Gestinanna::XSM"/>
+  </module>
+  <module name="Gestinanna::SchemaManager">
+    <interface>
+      <constructor/>
+      <method name="_load_create"/>
+      <method name="_load_runtime"/>
+      <method name="create_schema">
+        <dependence method="_load_create"/>
+      </method>
+      <method name="load_schema">
+        <dependence method="_load_runtime"/>
+      </method>
+      <method name="add_files">
+        <dependence method="parse_schema"/>
+      </method>
+      <method name="add_packages">
+        <dependence method="parse_schema"/>
+      </method>
+      <method name="parse_schema"/>
+      <method name="available_schema_defs">
+        <dependence method="add_files"/>
+        <dependence method="add_packages"/>
+      </method>
+      <method name="define_schema">
+        <dependence method="parents"/>
+        <dependence method="_process"/>
+      </method>
+      <method name="parents">
+        <dependence method="add_files"/>
+      </method>
+      <method name="_process"/>
+      <method name="new"/>
+      <method name="available_schemas"/>
+    </interface>
+    <dependence module="Gestinanna::Util"/>
+    <dependence module="Gestinanna::PackageManager"/>
+    <dependence module="Gestinanna::Exception"/>
+    <dependence module="Gestinanna::SchemaManager::Schema" ignore="yes"/>
+  </module>
+  <module name="Gestinanna::Upload">
+    <interface>
+      <constructor/>
+      <method name="name"/>
+      <method name="filename"/>
+      <method name="fh"/>
+      <method name="content"/>
+      <method name="size"/>
+      <method name="hash"/>
+      <method name="type"/>
+      <method name="new"/>
+    </interface>
+  </module>
+  <module name="Gestinanna::SchemaManager::Schema">
+    <interface>
+      <method name="schema"/>
+      <method name="add_schema">
+        <dependence method="schema"/>
+      </method>
+      <method name="add_relations">
+        <dependence method="add_schema"/>
+      </method>
+      <method name="make_live">
+        <dependence method="add_schema"/>
+      </method>
+    </interface>
+    <dependence module="Gestinanna::SchemaManager"/>
+  </module>
+</specification>

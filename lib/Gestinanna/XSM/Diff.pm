@@ -7,11 +7,9 @@ package Gestinanna::XSM::Diff;
 use Algorithm::Diff ();
 use Algorithm::Merge ();
 
-our @ISA = qw(Gestinanna::XSM);
+use base qw(Gestinanna::XSM);
 
 our $NS = 'http://ns.gestinanna.org/diff';
-
-__PACKAGE__ -> register;
 
 sub start_document {
     return "#initialize diff namespace\n";

@@ -1,6 +1,7 @@
 package Gestinanna::POF::Secure::Gestinanna;
 
 use base qw(Gestinanna::POF::Secure);
+use Gestinanna::Authz;
 
 our $VERSION = '0.01';
 
@@ -14,12 +15,24 @@ __PACKAGE__->contained_objects (
     authz => { class => q(Gestinanna::Authz), },
 );
 
+=begin testing
+
+# has_access
+
+sub __PACKAGE__::get_auth_id { [ 'temp', '/stuff' ] }
+
+__OBJECT__ = __PACKAGE__ -> new(
+    authz => $authz
+);
+
+=end testing
+
+=cut
+
 sub has_access {
     my($self, $attribute, $requirements) = @_;
 
-    warn("$self -> has_access($attribute, ...)\n");
-
-    return 1;
+    #warn("$self -> has_access($attribute, ...)\n");
 
     return unless defined $self -> {authz};
 

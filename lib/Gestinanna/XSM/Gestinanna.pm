@@ -4,11 +4,9 @@
 
 package Gestinanna::XSM::Gestinanna;
 
-our @ISA = qw(Gestinanna::XSM);
+use base qw(Gestinanna::XSM);
 
 our $NS = 'http://ns.gestinanna.org/gestinanna';
-
-__PACKAGE__ -> register;
 
 sub start_document {
     return "#initialize gst namespace\n";

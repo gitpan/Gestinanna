@@ -5,78 +5,49 @@ use NEXT;
 
 use strict;
 
-#sub object_ids {
-#    my $self = shift;
-#
-#    my $ret = $self -> NEXT::object_ids;
-#    main::diag(join("; ", caller()) . "$self -> object_ids: " . join(", ", @{$ret||[]}));
-#    return $ret;
-#}
-
-#sub load {
-#    my $self = shift;
-#
-#    main::diag("$self -> load");
-#    $self -> NEXT::load(@_);
-#    main::diag("after $self -> NEXT::load");
-#
-#    if($self -> {_row} && !$self -> {_row} -> is_live) {
-#        $self -> {_row} -> update(
-#            user_type => ($self -> {actor} ? $self->{actor}->object_type : ($self -> {user_type} || "UNKNOWN")),
-#            user_id   => ($self -> {actor} ? $self->{actor}->object_id : ($self -> {user_id} || "UNKNOWN")),
-#        );
-#    }
-#
-#    if($self -> revision eq pack("U*", 1, 1)) {
-#        # this is the initial document
-#        if(defined $self -> {actor}) {
-#            $self -> {user_type} = $self->{actor}->object_type;
-#            $self -> {user_id}   = $self->{actor}->object_id;
-#        }
-#        else {
-#            $self -> {user_type} = "UNKNOWN";
-#            $self -> {user_id} = "UNKNOWN";
-#        }
-#    }
-#}
-
 sub save {
     # we want to move actor->object_id tag when we save
     my $self = shift;
 
-# uncomment for development...
-#    return unless $self -> {actor};  # actor required for saving, optional for loading
-warn "Actor requirement commented out... don't use this in production!\n";
+    return unless $self -> {actor};  # actor required for saving, optional for loading
 
     # do any branching here if actor is not owner of edited revision
 
 #    warn "Saving $self\n";
 
-    if($self -> {actor} && (
-       $self -> {user_type} ne $self -> {actor} -> object_type ||
-       $self -> {user_id}   ne $self -> {actor} -> object_id) )
-    {
-        $self -> {user_type} = $self -> {actor} -> object_type;
-        $self -> {user_id  } = $self -> {actor} -> object_id  ;
-        $self -> branch if $self -> revision;
+    my($actor_type, $actor_id);
+
+    if($self -> {actor}) {
+        ($actor_type, 
+         $actor_id) = ($self -> {actor} -> object_type, 
+                       $self -> {actor} -> object_id);
     }
-    elsif(!$self -> {actor}) {
-        $self -> {user_type} = 'UNKNOWN';
-        $self -> {user_id  } = 'UNKNOWN';
+    else {
+        ($actor_type, $actor_id) = ('UNKNOWN', 'UNKNOWN');
+    }
+
+    if($self -> {user_type} ne $actor_type ||
+       $self -> {user_id}   ne $actor_id)
+    {
+        $self -> {user_type} = $actor_type;
+        $self -> {user_id  } = $actor_id;
+        $self -> branch if $self -> revision;
     }
 
     $self -> NEXT::save(@_);  # pass on any parameters, though we don't expect any
 
-    # move actor's tag
-    my $tag = $self -> tag_class -> init(
-        tag => $self->{actor} ? $self->{actor} -> object_id : "UNKNOWN",
-        object_id => $self -> {name},
-        alzabo_schema => $self -> {alzabo_schema},
-        _factory => $self -> {_factory},
-    );
+    if($actor_type ne 'UNKNOWN' && $actor_id ne 'UNKNOWN') {
+        # move actor's tag
+        my $tag = $self -> tag_class -> init(
+            tag => $actor_id,
+            object_id => $self -> {name},
+            alzabo_schema => $self -> {alzabo_schema},
+            _factory => $self -> {_factory},
+        );
 
-    $tag -> {revision} = $self -> {revision};
-    $tag -> save;
+        $tag -> {revision} = $self -> {revision};
+        $tag -> save;
+    }
 
     #warn "Returning from $self -> save\n";
     return 1;

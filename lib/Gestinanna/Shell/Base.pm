@@ -1,6 +1,169 @@
 package Gestinanna::Shell::Base;
 
+=begin testing
+
+# BEGIN
+
+use Expect;
+
+our $exp = Expect -> new;
+$exp -> spawn("perl",
+                  "-Iblib/lib",
+                  "-It/lib",
+                  "-MGestinanna",
+                  "-e",
+                  "shell",
+                  "--",
+                  "-p",
+                  "-f t/gstrc")
+        or die "Cannot spawn: $!\n";
+$exp -> stty(qw(echo));
+$exp -> log_stdout(1);
+
+sub shell_command_ok {
+    my($command) = shift;
+
+    return if $command =~ m{^\s*#}
+           || $command =~ m{^\s*$};
+
+    $exp -> expect(20, -re => 'gst>')
+        or die "Unable to find prompt\n";
+    print $exp "$command\r";
+    eval {
+        $exp -> expect(20,
+            [
+             qr'NOT OK:',
+             sub {
+                 die "Command ($command) did not complete successfully";
+             },
+            ],
+            [
+             qr'Unknown command',
+             sub {
+                 die "Unknown command - error in test script";
+             },  
+            ],
+            [
+             qr'OK',
+             sub {
+                 die "Command completed successfully";
+             },
+            ],
+        ) or die "Unable to find OK\n";
+    };
+    my $e = $@;
+    if($e !~ m{Command completed successfully}) {
+        ok(0, $command);
+        main::diag($e);
+    }
+    else {
+        ok(1, $command);
+    }
+    my @bits = split(/[\n\r]+/, $exp -> before());
+    shift @bits;
+    my $out = join("\n", @bits);
+    chomp($out);
+    return $out;
+}
+    
+END { 
+    our $exp;
+    if($exp) {
+        print $exp "quit\r";
+        eval {
+            $exp -> do_soft_close;
+            undef $exp;
+        };
+    }
+}
+
+=end testing
+
+=cut
+
+use Apache::Gestinanna;
 use Cwd;  # qw(chdir cwd);
+
+=begin testing
+
+# INIT
+
+use Expect;
+
+our $exp = Expect -> new;
+$exp -> spawn("perl",
+                  "-Iblib/lib",
+                  "-It/lib",
+                  "-MGestinanna",
+                  "-e",
+                  "shell",
+                  "--",
+                  "-p",
+                  "-f t/gstrc")
+        or die "Cannot spawn: $!\n";
+$exp -> stty(qw(echo));
+$exp -> log_stdout(1);
+
+sub shell_command_ok { 
+    my($command) = shift;
+
+    return if $command =~ m{^\s*#}
+           || $command =~ m{^\s*$};
+
+    $exp -> expect(20, -re => 'gst>')
+        or die "Unable to find prompt\n";    
+    print $exp "$command\r";
+    eval {    
+        $exp -> expect(20,    
+            [    
+             qr'NOT OK:',    
+             sub {    
+                 die "Command ($command) did not complete successfully";    
+             },    
+            ],    
+            [    
+             qr'Unknown command',    
+             sub {    
+                 die "Unknown command - error in test script";    
+             },    
+            ],    
+            [    
+             qr'OK',    
+             sub {    
+                 die "Command completed successfully";    
+             },    
+            ],    
+        ) or die "Unable to find OK\n";    
+    };
+    my $e = $@;
+    if($e !~ m{Command completed successfully}) {
+        ok(0, $command);
+        main::diag($e);
+    }
+    else {
+        ok(1, $command);
+    }
+    my @bits = split(/[\n\r]+/, $exp -> before());
+    shift @bits;
+    my $out = join("\n", @bits);
+    chomp($out);
+    return $out;
+}
+
+END {
+    our $exp;
+    if($exp) {
+        print $exp "quit\r";
+        eval {
+            $exp -> do_soft_close;
+            undef $exp;
+        };
+    }
+}
+
+=end testing
+
+=cut
 
 our $password;
  
@@ -14,6 +177,27 @@ our %EXPORT_COMMANDS = (
     '.' => \&do_readfile,
     );
 
+=begin testing
+
+# init_commands
+
+my $cmds = { };
+__PACKAGE__ -> __METHOD__($cmds);
+
+ok(eq_set([ keys %$cmds ], [qw(
+    bug
+    set
+    quit
+    ?
+    cd
+    pwd
+    .
+)]));
+
+=end testing
+
+=cut
+
 sub init_commands {
     my($class, $cmds) = @_;
 
@@ -23,6 +207,23 @@ sub init_commands {
 
 sub page {
     my($shell, $string) = @_;
+
+    if($shell -> {suppress_pager}) {
+        print $string;
+        return 1;
+    }
+
+    eval { require Term::Size; };
+
+    unless($@) {
+        my ($columns, $rows) = Term::Size::chars(*STDOUT{IO});
+        my $lines = $string =~ tr[\n][\n];
+        if($lines + 1 < $rows) {
+            chomp $string;
+            print $string, "\n";
+            return 1;
+        }
+    }
 
     my $PAGER = (-x $ENV{PAGER} ? $ENV{PAGER} : '') || "/usr/bin/less";
     open my $pager, "|-", $PAGER or do {
@@ -50,6 +251,68 @@ sub edit {
     return $filled_out_report;
 }
 
+sub edit_xml {
+    my($shell, $string) = @_;
+
+    my $new_string = $shell -> edit($string);
+
+
+    if($new_string eq $string || $new_string =~ m{^\s*$}) {
+        return $string;
+    }
+
+    my $parser = XML::LibXML -> new();
+    # need to make sure it parses
+    eval {
+        $parser -> parse_xml_chunk($new_string);
+    };
+
+    my $e = $@;
+    $e =~ s{\s*at /.*?/Base.pm line \d+\s*$}{}s;
+    while($e) {
+        my $newer_string = $shell -> edit(<<EOF);
+The following errors were found when parsing the XML:
+$e
+===========================================================================
+Everything above the following line of `=' will be removed when you are
+finished editing.  You do not need to remove the top of this document.
+===========================================================================
+$new_string
+EOF
+
+        $newer_string =~ s{^.*?={75}\n.*?={75}\n}{}s;
+        if($newer_string =~ m{^\s*$}s || $newer_string eq $string) {
+            return $string;
+        }
+        $new_string = $newer_string;
+        $e = '';
+        eval {
+            $parser -> parse_string($new_string);
+        };
+        $e = $@;
+        $e =~ s{\s*at /.*?/Base.pm line \d+\s*$}{}s;
+    }
+
+    return $new_string;
+}
+
+=begin testing
+
+# do_help
+
+my $t = shell_command_ok("?");
+
+ok($t =~ m{The following commands are available:});
+ok($t =~ m{\bbug\b});
+ok($t =~ m{\bset\b});
+ok($t =~ m{\bquit\b});
+ok($t =~ m{\bcd\b});
+ok($t =~ m{\bpwd\b});
+
+=end testing
+
+=cut
+
 sub do_help {
     my($shell, $prefix, $arg) = @_;
 
@@ -64,13 +327,13 @@ sub do_readfile {
     my($shell, $prefix, $arg) = @_;
 
     if($arg =~ /\?$/) {
-        print <<1HERE1;
+        print <<EOF;
 . <file> <args>
 
 Reads and interprets the named file as if its contents were typed on 
 the console.  Variables and not localized.  The arguments are available 
 as \$(1), \$(2), ....  The name of the file is \$(0).
-1HERE1
+EOF
         return;
     }
 
@@ -81,11 +344,34 @@ as \$(1), \$(2), ....  The name of the file is \$(0).
     $shell -> read_file($bits[0]);
 }
 
+=begin testing
+
+# do_cd
+
+shell_command_ok("cd t");
+
+=end testing
+
+=cut
+
 sub do_cd {
     my($shell, $prefix, $arg) = @_;
 
-    chdir($arg) or print "Unable to change to \"$a\".\n";
+    chdir($arg) or print "Unable to change to \"$arg\".\n";
 }
+
+=begin testing
+
+# do_pwd
+
+my $pwd = shell_command_ok("pwd");
+
+my @bits = File::Spec -> splitdir($pwd);
+ok($bits[$#bits] eq 't');
+
+=end testing
+
+=cut
 
 sub do_pwd {
     my($shell, $prefix, $arg) = @_;
@@ -102,22 +388,23 @@ sub do_bug {
     my $config = '';
 
     if($arg =~ /\?$/) {
-        print <<1HERE1;
+        print <<EOF;
 bug
 
 Sends a bug report to $DEV_LIST.
-1HERE1
+EOF
         return;
     }
 
     $config = "module\t\tversion\trevision\n\n";
     foreach my $m (sort qw-
-        HTML::Mason
         Gestinanna
+        Gestinanna::POF
+        Gestinanna::POF::Repository
         Template
+        Alzabo
         AxKit
         mod_perl
-        Uttu
     -) {
         eval "require $m";
         if($@) {
@@ -128,7 +415,7 @@ Sends a bug report to $DEV_LIST.
         }
     }
 
-    $bug_report = <<1HERE1;
+    $bug_report = <<EOF;
 One line description:
   [ONE LINE DESCRIPTION HERE]
 
@@ -155,9 +442,9 @@ Note: Complete the rest of the details and post this bug report to
 $to <at> $where. To subscribe to the list send 
 an empty email to $to-subscribe\@$where.
 
-1HERE1
+EOF
 
-    my $filled_out_report = $self -> edit($bug_report);
+    my $filled_out_report = $shell -> edit($bug_report);
     #open my $fh, ">", "/tmp/gst.bug.$$" or return 1;
     #print $fh $bug_report;
     #close $fh;
@@ -190,12 +477,52 @@ an empty email to $to-subscribe\@$where.
     1;
 }
 
+=begin testing
+
+# do_set
+
+__PACKAGE__::__METHOD__({ }, '', q{password 1234abcd});
+is($Gestinanna::Shell::password, "1234abcd");
+is($Gestinanna::Shell::VARIABLES{'password'}, 'set');
+
+__PACKAGE__::__METHOD__({ }, '', q{password});
+is($Gestinanna::Shell::password, '');
+is($Gestinanna::Shell::VARIABLES{'password'}, 'unset');
+
+__PACKAGE__::__METHOD__({ }, '', q{foo bar});
+is($Gestinanna::Shell::VARIABLES{'foo'}, 'bar');
+
+shell_command_ok("set foo bar");
+
+my $t;
+
+shell_command_ok("set password 1234abcd");
+$t = shell_command_ok("set");
+ok($t =~ m{^password\s+\[set\]$}m);
+
+shell_command_ok("set password");
+$t = shell_command_ok("set");
+ok($t =~ m{^password\s+\[unset\]$}m);
+
+shell_command_ok('set bar $(foo)');
+$t = shell_command_ok("set");
+ok($t =~ m{^bar\s+\[bar\]$}m);
+
+=end testing
+
+=cut
+
 sub do_set {
     my($self, $prior, $arg) = @_;
     @args = split(/\s/, $arg);
     if(@args) {
         my $v = shift @args;
         my $t = join(' ', @args);
+        if($self -> {_resources} && ($v eq 'dbi' || $v eq 'resources')) {
+            $self -> {_resources} -> {$Gestinanna::Shell::VARIABLES{dbi}} -> free(delete $self -> {_dbi})
+                if($self -> {_dbi});
+            delete $self -> {alzabo_schema};
+        }
         if($v eq 'password') {
             # need to prompt for it if we have a tty
             $Gestinanna::Shell::password = $t;
@@ -203,6 +530,23 @@ sub do_set {
         }
         else {
             $Gestinanna::Shell::VARIABLES{$v} = $t;
+        }
+        if($v eq 'resources') {
+            # need to dump old resources and load new ones
+            my $cfg = Apache::Gestinanna -> new;
+
+            $cfg -> read_resource_config($t);
+
+            my $resources = $cfg -> make_resources;
+
+            $self -> {_resources} = $resources;
+            if($Gestinanna::Shell::VARIABLES{dbi}) {
+                $self -> {_dbh} = $self -> {_resources} -> {$Gestinanna::Shell::VARIABLES{dbi}} -> get();
+            }
+        }
+        elsif($v eq 'dbi') {
+            $self -> {_dbh} = $self -> {_resources} -> {$Gestinanna::Shell::VARIABLES{dbi}} -> get();
+            delete $self -> {alzabo_schema};
         }
     }
     else {
@@ -230,6 +574,24 @@ sub interpret {
     }
 
     return $cmds->{$cmd} -> ($self, "$prior $cmd", $arg);
+}
+
+sub alzabo_params {
+    my $shell = shift;
+
+    my %params;
+    if($shell -> {_dbh}) {
+        $params{dbh} = $shell -> {_dbh};
+    }
+    else {
+        for(qw(host port user)) {
+            next unless defined $Gestinanna::Shell::VARIABLES{$_};
+            $params{$_} = $Gestinanna::Shell::VARIABLES{$_};
+        }
+        $params{password} = $Gestinanna::Shell::password if defined $Gestinanna::Shell::password;
+    }
+
+    return \%params;
 }
 
 1;

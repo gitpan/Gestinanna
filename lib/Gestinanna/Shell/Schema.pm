@@ -4,8 +4,9 @@ use Alzabo::Config;
 use Alzabo::Create;
 use Alzabo::Driver;
 use File::Spec;
-use Gestinanna::Schema;
+use Gestinanna::SchemaManager;
 use Gestinanna::Shell::Base;
+use Gestinanna::Shell::Schema::Def;
 use YAML ();
 
 @ISA = qw(Gestinanna::Shell::Base);
@@ -16,13 +17,15 @@ use YAML ();
 );
 
 %COMMANDS = (
+    %Gestinanna::Shell::Schema::Def::EXPORT_COMMANDS,
     load => \&do_load,
     create => \&do_create,
     docs => \&do_docs,
     delete => \&do_delete,
     drop => \&do_drop,
     list => \&do_list,
-    upgrade => \&do_upgrade,
+    make_live => \&do_make_live,
+    add_definitions => \&do_add_defs,
     '?' => \&do_help,
 );
 
@@ -36,6 +39,8 @@ sub do_help {
 sub do_schema {
     my($shell, $prefix, $arg) = @_;
 
+    $shell -> {schema_manager} ||= Gestinanna::SchemaManager -> new;
+
     if($arg !~ /^\s*$/) {
         return __PACKAGE__ -> interpret($shell, $prefix, $arg);
     } 
@@ -44,12 +49,35 @@ sub do_schema {
             print "Current schema: ", $shell -> {alzabo_schema} -> {name}, "\n";
         }
         else {
-            print <<1HERE1;
+            print <<EOF;
 No schema is currently loaded.  Use `schema load <schema>' to load a 
 schema or `schema create <schema> <optional schemas>' to create a new 
 schema.
-1HERE1
+EOF
         }
+    }
+}
+
+sub do_add_defs {
+    my($shell, $prefix, $arg) = @_;
+
+    if($arg =~ /\?$/) {
+        print <<EOF;
+schema add <file|directory>
+
+This will add all the schemas defined in the file or in application 
+packages in the directory.
+EOF
+        return;
+    }
+
+    if(-d $arg) {
+        # packages
+        my $packages = Gestinanna::PackageManager -> new( directory => $arg );
+        $shell -> {schema_manager} -> add_packages($packages);
+    }
+    else {
+        $shell -> {schema_manager} -> add_file($arg);
     }
 }
 
@@ -57,12 +85,12 @@ sub do_list {
     my($shell, $prefix, $arg) = @_;
 
     if($arg =~ /\?$/) {
-        print <<1HERE1;
+        print <<EOF;
 schemas; schema list
 
 This will list the available schemas known to Alzabo, whether or not 
 they are valid Gestinanna schemas.  
-1HERE1
+EOF
         return;
     }
 
@@ -76,7 +104,7 @@ sub do_load {
 
     if($arg =~ /\?$/) {
         # do help
-        print <<1HERE1;
+        print <<EOF;
 schema load <schema>
 
 Replace <schema> with the name of a pre-existing schema.  This will 
@@ -84,34 +112,52 @@ load the schema and make it the current schema for other commands
 which require a schema.
 
 See also: schema create
-1HERE1
+EOF
         return 1;
     }
+#    elsif(!$shell -> {_dbh}) {
+#        print <<EOF;
+#No database resource is selected.  Make sure you have set the 
+#`resources' and `dbi' variables.
+#EOF
+#        return 1;
+#    }
 
-    Gestinanna::Schema -> make_methods(
-        name => $arg
-    );
+# need to make this happen.... I think - though I don't use it (or shouldn't)
+    #Gestinanna::SchemaManager -> make_methods(
+    #    name => $arg
+    #);
 
-    my %params;
-    for(qw(host port user)) {
-        next unless defined $Gestinanna::Shell::VARIABLES{$_};
-        $params{$_} = $Gestinanna::Shell::VARIABLES{$_};
-    }
-    $params{password} = $Gestinanna::Shell::password if defined $Gestinanna::Shell::password;
+    my $params = $shell -> alzabo_params;
+    #if($shell -> {_dbh}) {
+    #    $params{dbh} = $shell -> {_dbh};
+    #}
+    #else {
+    #    for(qw(host port user)) {
+    #        next unless defined $Gestinanna::Shell::VARIABLES{$_};
+    #        $params{$_} = $Gestinanna::Shell::VARIABLES{$_};
+    #    }
+    #    $params{password} = $Gestinanna::Shell::password if defined $Gestinanna::Shell::password;
+    #}
 
-    my $cs = Gestinanna::Schema -> load_schema_create(
+    my $cs = $shell -> {schema_manager} -> create_schema(
         name => $arg,
-        %params,
+        %$params,
     );
-    my $s = Gestinanna::Schema -> load_schema(  
+    my $s = $shell -> {schema_manager} -> load_schema(
         name => $arg,
-        %params,
+        %$params,
     );
+
+    $s -> set_referential_integrity(1); # we need this, though this might be bad if using PostgreSQL
+
+    #print "Referential integrity on\n" if $s -> referential_integrity;
 
     $shell -> {alzabo_schema} -> {create_schema} = $cs;
     $shell -> {alzabo_schema} -> {runtime_schema} = $s;
     $shell -> {alzabo_schema} -> {name} = $arg;
     # we want to load the classes used to create the schema also (serialized with YAML)
+    # need to do this in the Schema object, not here
     $classfile = File::Spec -> catfile(Alzabo::Config -> schema_dir, $arg, "$arg.classes.gst");
     $shell -> {alzabo_schema} -> {classes} = YAML::LoadFile($classfile)
         if -f $classfile && -r _;
@@ -122,7 +168,7 @@ sub do_docs {
 
     if($arg =~ /\?$/) {
         # do help
-        print <<1HERE1;
+        print <<EOF;
 schema docs
 
 Displays the documentation for the methods created by Alzabo::MethodMaker 
@@ -131,7 +177,7 @@ for the currently loaded schema.
 If the PAGER environment variable is not set (or set to a non-executable 
 file), /usr/bin/less will be used.  If /usr/bin/less is not available, 
 no paging will be done.
-1HERE1
+EOF
         return 1;
     }
 
@@ -166,53 +212,55 @@ sub do_create {
         # do help
 
 
-        print <<1HERE1;
-schema create <rdbms> <name> <optional list of classes and namespaces>
+        print <<EOF;
+schema create <rdbms> <name>
 
 This will create a new schema with the name <name> using the relational 
-database system <rdbms>.  If the optional list of classes and namespaces 
-is specified, they will be added to the list of classes which define the 
-schema.
+database system <rdbms>.
 
 Valid values for <rdbms>: $drivers.
 
-A namespace is a Perl package name ending with two colons (::).  A class 
-is just a regular Perl package name.
+Schema definitions may be added to the schema.  Use `schema make_live' 
+to instantiate the schema in the chosen RDBMS.
 
-See also: schema load
-1HERE1
+See also: schema load, schema make_live, schema def
+EOF
         return 1;
     }
+#    elsif(!$shell -> {_dbh}) {
+#        print <<EOF;
+#No database resource is selected.  Make sure you have set the 
+#`resources' and `dbi' variables.
+#EOF
+#        return 1;
+#    }
+
 
     my($rdbms, $name, @classes) = split(/\s+/, $arg);
     unless($drivers{$rdbms}) {
-        print <<1HERE1;
+        print <<EOF;
 `$rdbms' is not a valid driver.  Please choose from one of the 
 following: $drivers.
-1HERE1
+EOF
         return 1;
     }
 
-    my @found_classes = grep { m{[^:]$} && eval "require $_" } @classes;
-
-    push @found_classes, map { Gestinanna::Schema -> find_schemas(substr($_, 0, -2)) } (grep { m{::$} } @classes);
-
     my($s, $schemas);
-    my %params;
-    for(qw(host port user)) {
-        next unless defined $Gestinanna::Shell::VARIABLES{$_};
-        $params{$_} = $Gestinanna::Shell::VARIABLES{$_};
-    }
-    $params{password} = $Gestinanna::Shell::password if defined $Gestinanna::Shell::password;
+    my $params = $shell -> alzabo_params;
+#    for(qw(host port user)) {
+#        next unless defined $Gestinanna::Shell::VARIABLES{$_};
+#        $params{$_} = $Gestinanna::Shell::VARIABLES{$_};
+#    }
+#    $params{password} = $Gestinanna::Shell::password if defined $Gestinanna::Shell::password;
 
-    delete $params{user} if $rdbms eq 'SQLite'; # doesn't allow a user
+    delete $params->{user} if $rdbms eq 'SQLite'; # doesn't allow a user
+#    $params{dbh} = $shell -> {_dbh};
 
     eval {
-        ($s, $schemas) = Gestinanna::Schema -> create_schema(
+        $s = $shell -> {schema_manager} -> create_schema(
             name => $name,
             rdbms => $rdbms,
-            classes => \@found_classes,
-            %params,
+            %$params,
         );
     };
 
@@ -224,94 +272,36 @@ following: $drivers.
     $shell -> {alzabo_schema} -> {create_schema} = $s;
     $shell -> {alzabo_schema} -> {name} = $name;
 
-    Gestinanna::Schema -> make_methods(
-        name => $name
-    );
+    #Gestinanna::Schema -> make_methods(
+    #    name => $name
+    #);
 
-    $s = Gestinanna::Schema -> load_schema(
-        name => $name,
-        %params,
-    );
-    $shell -> {alzabo_schema} -> {runtime_schema} = $s;
+    #$s = Gestinanna::Schema -> load_schema(
+    #    name => $name,
+    #    %$params,
+    #);
+    #$shell -> {alzabo_schema} -> {runtime_schema} = $s;
 
     # we want to save @found_classes somewhere
-    $shell -> {alzabo_schema} -> {classes} = $schemas;
-
-    my $classfile = File::Spec -> catfile(Alzabo::Config -> schema_dir, $name, "$name.classes.gst");
-    YAML::DumpFile($classfile, $shell -> {alzabo_schema} -> {classes});
-
     return 1;
 }
 
-sub do_upgrade {
+sub do_make_live {
     my($shell, $prefix, $arg) = @_;
-     
-    if($arg =~ /\?$/) {
-        # do help
-      
-        print <<1HERE1;
-schema upgrade <optional list of classes and namespaces>
-        
-This will upgrade the loaded schema.  If the optional list of 
-classes and namespaces is specified, they will be added to the 
-list of classes which define the schema.
-      
-A namespace is a Perl package name ending with two colons (::).  A class
-is just a regular Perl package name.
-        
-See also: schema create, schema load
-1HERE1
-        return 1;
-    }
 
-    my $name = $shell -> {alzabo_schema} -> {name};
+    if($shell -> {alzabo_schema} -> {create_schema}) {
+        my $params = $shell -> alzabo_params;
+        delete $params->{user} if $rdbms eq 'SQLite'; # doesn't allow a user
 
-    my @found_classes = ();
- 
-    my(@classes) = @{$shell -> {alzabo_schema} -> {classes}||[]}, split(/\s+/, $arg);
+        $shell -> {alzabo_schema} -> {create_schema} -> make_live(%$params);
 
-    push @found_classes, grep { m{[^:]$} && eval "require $_" } @classes;
- 
-    push @found_classes, map { Gestinanna::Schema -> find_schemas(substr($_, 0, -2)) } (grep { m{::$} } @classes);
-
-    my $s = $shell -> {alzabo_schema} -> {create_schema};
-     
-    my($schemas);
-    eval {
-        ($s, $schemas) = Gestinanna::Schema -> upgrade_schema(
-            schema => $s,
-            classes => \@found_classes,
-            host => $Gestinanna::Shell::VARIABLES{host},
-            port => $Gestinanna::Shell::VARIABLES{port},
-            user => $Gestinanna::Shell::VARIABLES{user},
-            password => $Gestinanna::Shell::password,
+        my $s = $shell -> {schema_manager} -> load_schema(
+            name => $shell -> {alzabo_schema} -> {name},
+            %{$params},
         );
-    };
 
-    if($@) {
-        warn "Unable to upgrade schema: $@\n",
-        return 1;
+        $shell -> {alzabo_schema} -> {runtime_schema} = $s;
     }
-
-    Gestinanna::Schema -> make_methods(
-        name => $name
-    );
-
-    $s = Gestinanna::Schema -> load_schema(
-        name => $name,
-        host => $Gestinanna::Shell::VARIABLES{host},
-        port => $Gestinanna::Shell::VARIABLES{port},
-        user => $Gestinanna::Shell::VARIABLES{user},
-        password => $Gestinanna::Shell::password,
-    );
-    $shell -> {alzabo_schema} -> {runtime_schema} = $s;
-
-    # we want to save @found_classes somewhere
-    $shell -> {alzabo_schema} -> {classes} = $schemas;
-
-    my $classfile = File::Spec -> catfile(Alzabo::Config -> schema_dir, $name, "$name.classes.gst");
-    YAML::DumpFile($classfile, $shell -> {alzabo_schema} -> {classes});
-
     return 1;
 }
 
@@ -319,14 +309,14 @@ sub do_drop {
     my($shell, $prefix, $arg) = @_;
 
     if($arg =~ /\?$/) {
-        print <<1HERE1;
+        print <<EOF;
 schema drop
 
 This will remove the database from the RDBMS where it was created.  It 
 will not remove the schema definition files.
 
 See also: schema delete
-1HERE1
+EOF
         return;
     }
 
@@ -335,27 +325,24 @@ See also: schema delete
         return;
     }
 
-    Gestinanna::Schema -> drop_schema(
-        schema => $shell -> {alzabo_schema} -> {create_schema},
-        host => $Gestinanna::Shell::VARIABLES{host},
-        port => $Gestinanna::Shell::VARIABLES{port},
-        user => $Gestinanna::Shell::VARIABLES{user},
-        password => $Gestinanna::Shell::password,
-    );
+    my $params = $shell -> alzabo_params;
+    delete $params->{user} if $rdbms eq 'SQLite'; # doesn't allow a user
+
+    $shell -> {alzabo_schema} -> {create_schema} -> drop(%$params);
 }
 
 sub do_delete {
     my($shell, $prefix, $arg) = @_;
     
     if($arg =~ /\?$/) {
-        print <<1HERE1;
+        print <<EOF;
 schema delete
 
 This will remove the schema definition files.  This will not remove 
 the database from the RDBMS.
 
 See also: schema drop
-1HERE1
+EOF
         return 1;
     }
 
@@ -364,9 +351,7 @@ See also: schema drop
         return;
     }
                                                                                                                           
-    Gestinanna::Schema -> delete_schema(
-        schema => $shell -> {alzabo_schema} -> {create_schema},
-    );
+    $shell -> {alzabo_schema} -> {create_schema} -> delete;
 
     delete $shell -> {alzabo_schema};
 }

@@ -8,7 +8,8 @@ sub content {
     my $self = shift;
 
     if($self -> {content}) {
-        return \($self -> {content} -> {data});
+        my $data = $self -> {content} -> data;
+        return \$data;
     }
     return;
 }

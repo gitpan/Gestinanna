@@ -6,11 +6,9 @@ package Gestinanna::XSM::Auth;
 
 use strict;
 
-our @ISA = qw(Gestinanna::XSM);
+use base qw(Gestinanna::XSM);
 
 our $NS = 'http://ns.gestinanna.org/auth';
-
-__PACKAGE__ -> register;
 
 sub start_document {
     return "#initialize auth namespace\n";
@@ -80,12 +78,12 @@ sub xsm_set_actor($$) {
     my $R = Gestinanna::Request -> instance;
     if(defined $actor) {
         return unless $actor && UNIVERSAL::can($actor, 'object_id');
-        warn "Actor: $actor - ", $actor -> object_id, "\n";
+        #warn "Actor: $actor - ", $actor -> object_id, "\n";
         $R -> factory -> {actor} = $actor;
         $R -> session -> {actor_id} = $actor -> object_id;
     } else {
         # actually, need to make this the guest
-        warn "logging out...\n";
+        #warn "logging out...\n";
         delete $R -> session -> {actor_id};
         delete $R -> factory -> {actor};
         my $ctx = $R -> session -> {contexts} || {};
@@ -108,14 +106,14 @@ sub valid_authentic {
     my( $password, $username ) = @_;
 
     my $R = Gestinanna::Request -> instance;
-    warn "username: $username\n";
+    #warn "username: $username\n";
     my $unameob = $R -> factory -> new(username => object_id => $username);
-    warn "username ob: $unameob; is_live: " . $unameob -> is_live . "\n";
+    #warn "username ob: $unameob; is_live: " . $unameob -> is_live . "\n";
     return 0 unless $unameob && $unameob -> is_live;
     my $userob = $R -> factory -> new(user => object_id => $unameob -> user_id);
-    warn "user ob: $userob; is_live: " . $userob -> is_live . "\n";
+    #warn "user ob: $userob; is_live: " . $userob -> is_live . "\n";
     return 0 unless $userob && $userob -> is_live;
-    warn "encoded password: " . xsm_encode_password(undef, $password) . "\nstored password: " . $userob -> password . "\n";
+    #warn "encoded password: " . xsm_encode_password(undef, $password) . "\nstored password: " . $userob -> password . "\n";
     return $userob -> compare('password', xsm_encode_password(undef, $password));
 }
 

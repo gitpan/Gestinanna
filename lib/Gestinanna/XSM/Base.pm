@@ -32,10 +32,11 @@ package Gestinanna::XSM::Base;
     
 use Data::FormValidator ();
 use Data::Dumper;  # here for testing/development - comment out for release
-#use YAML ();
+use Gestinanna::Util qw(:hash);
 use Storable ();
 use Class::Container;
 use Params::Validate qw(:types);
+use Gestinanna::Request;
 use Apache::Log;
 
 use strict;
@@ -52,7 +53,7 @@ __PACKAGE__ -> valid_params(
 $VERSION = '0.06';
         
 { no warnings;
-$REVISION = sprintf("%d.%d", q$Id: Base.pm,v 1.1 2004/02/24 17:27:37 jgsmith Exp $ =~ m{(\d+).(\d+)});
+$REVISION = sprintf("%d.%d", q$Id: Base.pm,v 1.4 2004/06/25 08:02:22 jgsmith Exp $ =~ m{(\d+).(\d+)});
 }
     
 #$DEBUG = 1;
@@ -61,6 +62,18 @@ sub _DEBUG {
     return unless $DEBUG;
     warn @_;
 }
+
+=begin testing
+
+# log
+
+__OBJECT__ -> __METHOD__(debug => 'debug');
+
+is(__OBJECT__ -> __METHOD__, 'debug');
+
+=end testing
+
+=cut
 
 sub log {
     my $self = shift;
@@ -75,8 +88,28 @@ sub log {
         push @{$self -> {debug_log} ||= []}, @_;
     }
     #warn "@_\n";
-    Apache -> request -> log -> $level(@_);
+    if(Gestinanna::Request -> in_mod_perl) {
+        Apache -> request -> log -> $level(@_);
+    }
 }
+
+=begin testing
+
+# filename
+
+$My::XSM::Test::FILENAME = $My::XSM::Test::FILENAME = 'filename';
+
+@My::XSM::Test::ISA = qw(__PACKAGE__);
+
+is(__PACKAGE__::__METHOD__('My::XSM::Test'), 'filename');
+
+my $o = bless { } => 'My::XSM::Test';
+
+is($o -> __METHOD__, 'filename');
+
+=end testing
+
+=cut
 
 sub filename {
     no strict 'refs';
@@ -86,6 +119,14 @@ sub filename {
     return ${"${class}::FILENAME"};
 }
         
+=begin testing
+
+# can
+
+=end testing
+
+=cut
+
 sub can {
     my($self) = shift;
 
@@ -136,13 +177,68 @@ sub can {
     return $code;
 }
 
+=begin testing
+
+# _make_can_code
+
+my($a, $b) = (0, 0);
+
+my $code = __PACKAGE__::__METHOD__(undef, undef);
+ok(UNIVERSAL::isa($code, 'CODE'));
+eval { $code -> ( ); };
+ok(!$@);
+
+$code = __PACKAGE__::__METHOD__(sub { $a = 1 }, undef );
+ok(UNIVERSAL::isa($code, 'CODE'));
+eval { $code -> ( ); };
+ok(!$@);
+ok($a && !$b);
+
+$a = $b = 0;
+
+$code = __PACKAGE__::__METHOD__(sub { $a = 1 }, sub { $b = 1} );
+ok(UNIVERSAL::isa($code, 'CODE'));
+eval { $code -> ( ); };
+ok(!$@);
+ok($a && $b);
+
+$a = $b = 0;
+
+$code = __PACKAGE__::__METHOD__(sub { $b = 1} );
+ok(UNIVERSAL::isa($code, 'CODE'));
+eval { $code -> ( ); };
+ok(!$@);
+ok(!$a && $b);
+
+my $i = 0;
+my @t = ( 0, 0 );
+
+$code = __PACKAGE__::__METHOD__(sub { $t[$i++] = 1; }, sub { $t[$i++] = 2; });
+ok(UNIVERSAL::isa($code, 'CODE'));
+eval { $code -> ( ); };
+ok(!$@);
+ok($t[0] == 2 && $t[1] == 1);
+
+=end testing
+
+=cut
+
 sub _make_can_code {
     my($prcode, $pocode) = @_;
 
-    _DEBUG("_make_can_code($prcode, $pocode)\n");
-
     return sub { $pocode->(@_) if $pocode; $prcode->(@_) if $prcode; };
 }
+
+=begin testing
+
+# _can_hasa
+
+@My::Had::XSM::ISA = qw(__PACKAGE__);
+@My::Has::XSM::ISA = qw(__PACKAGE__);
+
+=end testing
+
+=cut
 
 sub _can_hasa {
     my($self, $ostate, $nstate) = @_;
@@ -164,7 +260,7 @@ sub _can_hasa {
     
         $code = $self -> can($ostate, $nstate);
         bless $self => $class;
-        return _make_hasa_can_code(${"${class}::HASA"}{$p}, $class, $p, $code) if $code;
+        return $class -> _make_hasa_can_code(${"${class}::HASA"}{$p}, $p, $code) if $code;
     }
 
     foreach my $c (@{"${class}::ISA"}) {
@@ -175,8 +271,55 @@ sub _can_hasa {
     }
 }
 
+=begin testing
+
+# _make_hasa_can_code
+
+my $a = '';
+my @args = ( );
+
+my $code = __PACKAGE__ -> __METHOD__('My::Test::XSM', 'test', sub {
+    my $self = shift;
+    $a = ref $self;
+    @args = @_;
+});
+
+ok(UNIVERSAL::isa($code, 'CODE'));
+
+my $self = bless { } => __PACKAGE__;
+
+$code -> ($self, qw(1 2 3));
+
+is($a, 'My::Test::XSM');
+is_deeply([@args], [qw(1 2 3)]);
+is(ref $self, q(__PACKAGE__));
+
+$code = __PACKAGE__ -> _make_hasa_can_code('My::Test::XSM', 'test', sub {
+    die "Help!\n";
+});
+
+eval { $code -> ($self, qw(1 2 3)) };
+ok($@ eq "Help!\n");
+
+$code = __PACKAGE__ -> __METHOD__('My::Test::XSM', 'test', sub {
+    throw StateMachine::Gestinanna::Exception(
+        -state => 'ing',
+        -data => [ @_[1 .. $#_] ],
+    )
+});
+
+eval { $code -> ($self, qw(1 2 3)) };
+my $e = $@;
+ok(UNIVERSAL::isa($e, 'StateMachine::Gestinanna::Exception'));
+is($e -> state, 'test_ing');
+is_deeply($e -> data, [qw(1 2 3)]);
+
+=end testing
+
+=cut
+
 sub _make_hasa_can_code {
-    my($newclass,$oldclass,$p,$code) = @_;
+    my($oldclass, $newclass,$p,$code) = @_;
 
     return sub {
         my $self = shift;
@@ -196,6 +339,41 @@ sub _make_hasa_can_code {
     };
 }
 
+=begin testing
+
+# _transit
+
+my($a, $b);
+
+{ package My::__METHOD__::SM;
+  our @ISA = qw(__PACKAGE__);
+
+  sub pre_a { $a = 'pre' };
+  sub post_a { $a = 'post' };
+  sub pre_b { $b = 'pre' };
+  sub post_b { $b = 'post' };
+  sub a_to_b { $a = 'from'; $b = 'to' };
+  sub b_to_a { $a = 'to'; $b = 'from' };
+}
+
+my $sm = My::__METHOD__::SM -> new;
+
+$sm -> _transit(qw(a b));
+ok($a eq 'from' && $b eq 'to');
+
+$sm -> _transit(qw(b a));
+ok($a eq 'to' && $b eq 'from');
+
+$sm -> _transit(qw(a c));
+ok($a eq 'post');
+
+$sm -> _transit(qw(c a));
+ok($a eq 'pre');
+
+=end testing
+
+=cut
+
 # _transit() will try to go the new new $nstate but will throw an exception if unable to do so.
 # $nstate - state we are going to
 # $ostate - state we are going from
@@ -209,9 +387,8 @@ sub _transit {
     my $code_run = 0;
     my $ret;
 
-    if($ostate) {
+    if(defined $ostate) {
         $ret = $self -> $code_run() if $code_run = $self -> can($ostate, $nstate);
-        _DEBUG("Ran $code_run for can($ostate, $nstate)\n");
     }
     else {
         $ret = $self -> $code_run() if $code_run = $self -> can("pre_${nstate}");
@@ -220,6 +397,13 @@ sub _transit {
     return $ret;
 }
 
+=begin testing
+
+# transit
+
+=end testing
+
+=cut
 
 # transit() will try to go to the new $nstate, and will process any ErrorState transitions requested
 # $nstate - state we are transitioning to
@@ -289,23 +473,69 @@ sub is_not_terminal_state {
     return 0 != scalar(keys %{ ${"${package}::EDGES_CACHE"}{$state}{'profile'} || {}});
 }
 
+=begin testing
+
+# alias_state
+
+%My::Test::XSM::ALIASES = %My::Test::XSM::ALIASES = (
+   '_begin' => 'start',
+);
+@My::Test::XSM::ISA = @My::Test::XSM::ISA = qw(__PACKAGE__);
+
+is(__PACKAGE__::__METHOD__('My::Test::XSM', '_begin'), 'start');
+is(__PACKAGE__::__METHOD__('My::Test::XSM', '_end'), '_end');
+
+my $self = bless { } => 'My::Test::XSM';
+
+is($self -> __METHOD__('_begin'), 'start');
+is($self -> __METHOD__('_end'), '_end');
+
+is(__PACKAGE__::alias_state(undef, ''), undef);
+
+=end testing
+
+=cut
+
 sub alias_state {
     my($self, $state) = @_;
 
-    my $package = ref($self) || $self;
+    return unless defined $self;
+    my $package = $self;
+    $package = ref $self if ref $self;
     #warn "aliases: $package - $state\n";
     return ${"${package}::ALIASES"}{$state} if exists ${"${package}::ALIASES"}{$state};
     return $state;
 }
 
+=begin testing
+
+# state
+
+my $self = bless { } => 'My::Test::XSM';
+
+$self -> __METHOD__('_begin');
+is($self -> __METHOD__, 'start');
+
+my $old = $self -> __METHOD__('_end');
+is($old, 'start');
+
+is($self -> __METHOD__, '_end');
+
+=end testing
+
+=cut
+
 # get/set the current state -- no transition is implied
 sub state { 
     my $self = shift;
     return $self -> {context} -> {state} unless @_; 
-    warn "setting state to $_[0] : ", $self -> alias_state($_[0]), "\n";
+    #warn "setting state to $_[0] : ", $self -> alias_state($_[0]), "\n";
+    my $prev = $self -> {context} -> {state};
+    $self -> {context} -> {state} = $self -> alias_state(shift);
+    return $prev;
     return( (
-        $self -> {context} -> {state},
-        $self -> {context} -> {state} = $self -> alias_state(shift),
+        ($self -> {context} -> {state}),
+        ($self -> {context} -> {state} = $self -> alias_state(shift)),
     )[0]);
 }
 
@@ -317,6 +547,37 @@ sub view {
     return ${"${package}::VIEWS_CACHE"}{$state} if exists ${"${package}::VIEWS"}{$state};
     return $state;
 }
+
+=begin testing
+
+# data
+
+{ package My::__METHOD__::SM;
+  our @ISA = qw(__PACKAGE__);
+}
+
+my $sm = My::__METHOD__::SM -> new;
+
+$sm -> add_data('in', { foo => 'bar' } );
+$sm -> add_data('in.baz', { bar => 'foo' } );
+$sm -> add_data('in.baz.foo', { bar => 2 } );
+
+is_deeply($sm -> __METHOD__('in'), {
+    foo => 'bar',
+    baz => {
+      bar => 'foo',
+      foo => { bar => 2 },
+    },
+});
+
+is_deeply($sm -> __METHOD__('in.baz'), {
+    bar => 'foo',
+    foo => { bar => 2 },
+});
+
+=end testing
+
+=cut
 
 sub data {
     my($self, $root) = @_;
@@ -335,12 +596,33 @@ sub data {
     return $t;
 }
 
+=begin testing
+
+# clear_data
+
+{ package My::__METHOD__::SM;
+  our @ISA = qw(__PACKAGE__);
+}
+
+my $sm = My::__METHOD__::SM -> new;
+
+$sm -> clear_data;
+
+is_deeply($sm -> {context} -> {data}, {
+    in => { }, out => { },
+});
+
+=end testing
+
+=cut
+
 # clear data made available to the transition code
 sub clear_data {
     my($self, $root) = @_;
 
     #warn "clear_data($self, $root) called from " . join("; ", caller) . "\n";
 
+    $root = '' unless defined $root;
     my @bits = split(/\./, $root);
     if(@bits > 1) {
         my $t = $self -> {context} -> {data};
@@ -362,6 +644,34 @@ sub clear_data {
     }
 }
 
+=begin testing
+
+# add_data
+
+{ package My::__METHOD__::SM;
+  our @ISA = qw(__PACKAGE__);
+}
+
+my $sm = My::__METHOD__::SM -> new;
+
+$sm -> clear_data;
+
+$sm -> add_data('in', {
+    foo => 'bar'
+});
+
+is($sm -> {context} -> {data} -> {in} -> {foo}, 'bar');
+
+$sm -> add_data('in.baz', {
+    foo => 'bar'
+});
+
+is($sm -> {context} -> {data} -> {in} -> {baz} -> {foo}, 'bar');
+
+=end testing
+
+=cut
+
 # add the data to the context under the specified root
 # $prefix - root in the data tree
 # $args - data to be added
@@ -369,7 +679,7 @@ sub add_data {
     my($self, $prefix, $args) = @_;
 
     return unless UNIVERSAL::isa($args, 'HASH');
-    my $base = $self -> {context} -> {data};
+    my $base = $self -> {context} -> {data} ||= { };
     if($prefix) {
         my @bits = split(/\./, $prefix);
         foreach my $b (@bits) {
@@ -415,6 +725,7 @@ sub transitioned { $_[0] -> {_transitioned} };
 sub process {
     my($self, $args) = @_;
 
+    #warn "Args: ", Data::Dumper -> Dump([$args]);
     delete @$args{grep { !defined($$args{$_}) || $$args{$_} eq '' }
                        keys %$args};
 
@@ -424,6 +735,7 @@ sub process {
 
     _DEBUG("$self -> process($args)\n$args: ", Data::Dumper -> Dump([$args]), "\n");
     $self -> add_data('in', $args);
+
 
     my $best = $self -> select_state;
     #warn "Best: ", Data::Dumper -> Dump([$best]);
@@ -439,6 +751,27 @@ sub process {
         $self -> {_transitioned} = 1;
     }
 }
+
+=begin testing
+
+# _flatten_hash
+
+is_deeply(__PACKAGE__::__METHOD__({
+   foo => 2, bar => 3
+}), { foo => 2, bar => 3 });
+
+is_deeply(__PACKAGE__::__METHOD__({
+    foo => { baz => 2 }, bar => 3, fud => { food => { flood => 5 }, flaunt => 6 }
+}), { qw(
+    foo.baz 2
+    bar     3
+    fud.food.flood  5
+    fud.flaunt      6
+)});
+
+=end testing
+
+=cut
 
 sub _flatten_hash {
     local($_);
@@ -460,6 +793,20 @@ sub _flatten_hash {
     return \%h;
 }
 
+=begin testing
+
+# get_super_path
+
+%My::get_super_path::Test::EDGES_CACHE = %My::get_super_path::Test::EDGES_CACHE = (
+    test_state => { super_path => [ qw(1 2 3) ] },
+);
+
+ok(eq_set([__PACKAGE__::__METHOD__('My::get_super_path::Test', 'test_state')], [qw(1 2 3)]));
+
+=end testing
+
+=cut
+
 sub get_super_path {
     my($self, $state) = @_;
 
@@ -470,6 +817,14 @@ sub get_super_path {
     #warn "Edges Cache: " . Data::Dumper -> Dump([${"${class}::EDGES_CACHE"}]);
     return @{${"${class}::EDGES_CACHE"}{$state}{super_path} || []};
 }
+
+=begin testing
+
+# select_state
+
+=end testing
+
+=cut
 
 # TODO: investigate using AI::DecisionTree to rank potential transitions for testing
 sub select_state {
@@ -492,7 +847,7 @@ sub select_state {
 
     return $best unless $validator;
 
-    my $cache = ${"${class}::EDGES_CACHE"}{$self -> state};
+     my $cache = ${"${class}::EDGES_CACHE"}{$self -> state};
     _DEBUG("cache for $class - ", $self -> state, ": ", Data::Dumper -> Dump([$cache]), "\n");
     my @states = keys %{$cache -> {profile}};
     return $best unless @states;
@@ -538,12 +893,13 @@ sub select_state {
         #warn "$v scores $score\n";
         #warn "$v: missing $nm  invalid $ni  unknown $nu  valid $nv\n";
         #warn "missing: ", join(", ", @$missing), "\n";
+        #warn "best score: $$best{score} ; best missing: $$best{num_missing}\n";
         if($best->{score} == -1 
            || ($score >= $best->{score} 
                && (!(defined($nm) 
-                     && defined($best -> {nm})
+                     && defined($best -> {num_missing})
                     ) 
-                  || $nm <= $best -> {nm}
+                  || $nm <= $best -> {num_missing}
                   )
               )
           ) {
@@ -581,21 +937,95 @@ sub select_state {
     return $best;
 }
 
+=begin testing
+
+# selected_state
+
+=end testing
+
+=cut
+
 sub selected_state { $_[0] -> {context} -> {best} -> {state} }
+
+=begin testing
+
+# missing
+
+=end testing
+
+=cut
 
 sub missing { $_[0] -> {best} -> {missing} || [] }
 
+=begin testing
+
+# invalid
+
+=end testing
+
+=cut
+
 sub invalid { $_[0] -> {best} -> {invalid} || [] }
+
+=begin testing
+
+# unknown
+
+=end testing
+
+=cut
 
 sub unknown { $_[0] -> {best} -> {unknown} || [] }
 
+=begin testing
+
+# messages
+
+=end testing
+
+=cut
+
 sub messages { $_[0] -> {best} -> {messages} || { } }
+
+=begin testing
+
+# generate_validators
+
+{ package My::__METHOD__::Test1;
+  our @ISA = __PACKAGE__;
+                    
+  our %EDGES = (
+    state1 => {     
+        state2 => {
+            required => [qw(one two)],
+            optional => [qw(three)],
+        },          
+    },
+    state2 => {
+        state1 => {
+            required => [qw(four five)],
+        }   
+    }
+  );    
+}
+
+My::__METHOD__::Test1 -> generate_validators;
+
+my $vs = \%My::__METHOD__::Test1::VALIDATORS;
+
+ok(eq_set([keys %$vs], [qw(state1 state2)]));
+
+isa_ok($vs -> {'state1'}, 'Data::FormValidator');
+isa_ok($vs -> {'state2'}, 'Data::FormValidator');
+
+=end testing
+
+=cut
 
 sub generate_validators {
     my($class) = shift;
 
     $class = ref $class || $class;
-    _DEBUG("Generating validators for $class\n");
 
     $class -> _generate_states;
 
@@ -605,15 +1035,184 @@ sub generate_validators {
     my $vs = \%{"${class}::VALIDATORS"};
 
     foreach my $state (keys %$states) {
-    #while(my($state, $reqs) = each %$states) {
-        _DEBUG("Creating validator for [$state]\n");
         delete $states -> {$state} ->{profile} -> {$_} -> {overrides} foreach keys %{$states -> {$state} ->{profile}||{}};
 
         $vs->{$state} = Data::FormValidator->new($states -> {$state} ->{profile});
-        _DEBUG "Validator: ", Data::Dumper -> Dump([$vs->{$state}]), "\n";
-        _DEBUG "Input data: ", Data::Dumper -> Dump([$states -> {$state} ->{profile}]), "\n";
     }
 }
+
+=begin testing
+
+# _generate_states
+
+{ package My::__METHOD__::Test1;
+  our @ISA = __PACKAGE__;
+
+  our %EDGES = (
+    state1 => {
+        state2 => {
+            required => [qw(one two)],
+            optional => [qw(three)],
+        },
+    },
+    state2 => {
+        state1 => {
+            required => [qw(four five)],
+        }
+    }
+  );
+}
+
+{ package My::__METHOD__::Test_ALL;
+  our @ISA = qw(My::__METHOD__::Test1);
+
+  our %EDGES = (
+    _INHERIT => 'ALL',
+    state1 => {
+      state3 => {
+          required => [qw(six)],
+      },
+      state2 => {
+          required => [qw(three)],
+      }
+    },
+  );
+}
+
+{ package My::__METHOD__::Test_SUPER;
+  our @ISA = qw(My::__METHOD__::Test1);
+
+  our %EDGES = (
+    _INHERIT => 'SUPER',
+    state1 => {
+      state3 => {
+          required => [qw(six)],
+      },
+      state2 => {
+          required => [qw(three)],
+      }
+    },
+  );
+}
+
+{ package My::__METHOD__::Test_NONE;
+  our @ISA = qw(My::__METHOD__::Test1);
+
+  our %EDGES = (
+    _INHERIT => 'NONE',
+    state1 => {
+      state3 => {
+          required => [qw(six)],
+      },
+      state2 => {
+          required => [qw(three)],
+      }
+    },
+  );
+}
+
+My::__METHOD__::Test_ALL -> _generate_states;
+
+#diag(Data::Dumper -> Dump([\%My::__METHOD__::Test_ALL::EDGES_CACHE]));
+
+is_deeply(\%My::__METHOD__::Test_ALL::EDGES_CACHE, {
+  state1 => { 
+    profile => {
+      state2 => {
+        required => [qw(three one two)],
+        optional => q(three),
+      },
+      state3 => {
+        required => q(six),
+      },
+    },
+    overrides => { 
+      state2 => { },
+      state3 => { },
+    },
+    super_path => [
+      [ 'My::__METHOD__::Test1', 'state1' ],
+    ],
+  },
+  state2 => { 
+    profile => {
+      state1 => {
+        required => [qw(four five)],
+      }
+    },
+    overrides => { 
+      state1 => { },
+    },
+    super_path => [
+      [ 'My::__METHOD__::Test1', 'state2' ],
+    ],
+  },
+});
+
+My::__METHOD__::Test_SUPER -> _generate_states;
+
+is_deeply(\%My::__METHOD__::Test_SUPER::EDGES_CACHE, {
+  state1 => {
+    profile => {
+      state2 => {
+        required => [qw(three one two)],
+        optional => q(three),
+      },
+      state3 => {
+        required => q(six),
+      },
+    },
+    overrides => {
+      state2 => { },
+      state3 => { },
+    },
+    super_path => [
+      [ 'My::__METHOD__::Test1', 'state1' ],
+    ],
+  },
+  state2 => {
+    profile => {
+      state1 => {
+        required => [qw(four five)],
+      }
+    },
+    overrides => {
+      state1 => { },
+    },
+    super_path => [
+      [ 'My::__METHOD__::Test1', 'state2' ],
+    ],
+  },
+});
+
+My::__METHOD__::Test_NONE -> _generate_states;
+
+is_deeply(\%My::__METHOD__::Test_NONE::EDGES_CACHE, {
+  state1 => {
+    profile => {
+      state2 => {
+        required => q(three),
+      },
+      state3 => {
+        required => q(six),
+      },
+    },
+    overrides => {
+      state2 => { },
+      state3 => { },
+    },
+    super_path => [
+    ],
+  },
+  state2 => {
+    profile => { },
+    overrides => { },
+  },
+});
+
+=end testing
+
+=cut
 
 sub _generate_states {
     my($class) = shift;
@@ -739,6 +1338,45 @@ sub _generate_states {
     #warn "Edges cache for $class: " . Data::Dumper -> Dump([$cache]);
 }
 
+=begin testing
+
+# _merge_state_defs
+
+is_deeply(__PACKAGE__::__METHOD__([qw(ALL)],
+   { a => { b => 2 }, b => { a => 1 } },
+   { a => { b => 3 }, b => { c => 2 } },
+   { c => { a => 2 } },
+), {
+    a => { b => [3, 2] },
+    b => { a => 1, c => 2 },
+    c => { a => 2 }
+});
+
+is_deeply(__PACKAGE__::__METHOD__([qw(SUPER)],
+   { a => { b => 2 }, b => { a => 1 } },
+   { a => { b => 3 }, b => { c => 2 } },
+   { c => { a => 2 } },
+), {
+    a => { b => [3, 2] },
+    b => { a => 1, c => 2 },
+    c => { a => 2 }
+});
+
+is_deeply(__PACKAGE__::__METHOD__([qw(NONE)],
+   { a => { b => 2 }, b => { a => 1 } },
+   { a => { b => 3 }, b => { c => 2 } },
+   { c => { a => 2 } },
+), {
+    a => { b => 2 },
+    b => { a => 1 },
+    c => { a => 2 },
+});
+
+
+=end testing
+
+=cut
+
 sub _merge_state_defs {
     my $inherit = shift;
     my(@defs) = reverse @_;
@@ -754,41 +1392,11 @@ sub _merge_state_defs {
     foreach my $state (@states) {
         my @parts = grep {defined} (map { $_->{$state} } @defs);
         for($inherit->[0]) {
-            /^SUPER$/ && do { @parts = ($parts[0], $parts[-1]); last; };
+            /^SUPER$/ && do { @parts = ((@parts > 1 ? $parts[0] : ()), $parts[-1]); last; };
             /^ALL$/ && last;
             /^NONE$/ && do { @parts = ($parts[-1]);  last; }; 
         }
-        $ret -> {$state} = _deep_merge_hash(@parts);
-    }
-
-    return $ret;
-}
-
-sub _deep_merge_hash {
-    my(@hashes) = @_;
-
-    my %hash = map { $_ => 1 } (map { keys %$_ } @hashes);
-    my @keys = keys %hash;
-
-    my $ret = { };
-
-    foreach my $k (@keys) {
-        my @items = grep { defined } ( map { $_->{$k} } @hashes );
-        next unless @items;
-        if(UNIVERSAL::isa($items[0], 'HASH')) {
-            $ret->{$k} = _deep_merge_hash(@items);
-        }
-        else {
-            $ret->{$k} = [
-                map { UNIVERSAL::isa($_, 'ARRAY') ? @$_ : $_ } @items
-            ];
-            if(@{$ret->{$k}} == 1) {
-                $ret->{$k} = $ret->{$k}->[0];
-            }
-            elsif(@{$ret->{$k}} == 0) {
-                delete $ret->{$k};
-            }
-        }
+        $ret -> {$state} = deep_merge_hash(@parts);
     }
 
     return $ret;
@@ -808,6 +1416,30 @@ sub new {
     return $self;
 }
 
+=begin testing
+
+# clear_context
+
+{ package My::__METHOD__::SM;
+  our @ISA = qw(__PACKAGE__);
+  our %EDGES = ( );
+}
+
+my $sm = My::__METHOD__::SM -> new;
+
+$sm -> clear_context;
+
+is_deeply($sm -> {context}, {
+    data => {
+      in => { }, out => { },
+    },
+    saved_context => undef,
+});
+
+=end testing
+
+=cut
+
 sub clear_context {
     my $self = shift;
 
@@ -819,6 +1451,24 @@ sub clear_context {
         saved_context => $self -> {context} -> {saved_context},
     };
 }
+
+=begin testing
+
+# context
+
+my $sm = bless { } => __PACKAGE__;
+
+my $context = {
+    in => { a => 'b' },
+    out => { foo => 'bar' },
+};
+
+$sm -> context(Storable::nfreeze($context));
+is_deeply(Storable::thaw($sm -> context), $context);
+
+=end testing
+
+=cut
 
 sub context {
     my $self = shift;
@@ -859,7 +1509,7 @@ __END__
 
 =head1 NAME
 
-StateMachine::Gestinanna - provides context and state machine for wizard-like applications
+Gestinanna::XSM::Base - provides context and state machine for wizard-like applications
 
 =head1 SYNOPSIS
 
@@ -893,6 +1543,7 @@ StateMachine::Gestinanna - provides context and state machine for wizard-like ap
  my $sm = new My::Wizard(context => $context);
  $sm -> process($data);
  my $state = $sm -> state;
+ my $view = $sm -> view;
 
 =head1 DESCRIPTION
 

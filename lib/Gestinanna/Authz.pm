@@ -1,6 +1,6 @@
 package Gestinanna::Authz;
 
-use Gestinanna::Authz::Path;
+use Gestinanna::Util qw(:path);
 
 use Carp;
 
@@ -11,12 +11,197 @@ use vars qw($VERSION);
 
 $VERSION = '0.00_02';
 
+=begin testing
+
+# INIT
+
+our $schema;
+our $authz;
+
+$authz = __PACKAGE__ -> new(
+    alzabo_schema => $schema
+);
+
+=end testing
+
+=head1 NAME
+
+Gestinanna::Authz
+
+=head1 SYNOPSIS
+
+ $authz = Gestinanna::Authz -> new(alzabo_schema => $schema);
+
+ if($authz -> has_attributes($user, $path, $attrs)) {
+    # do something
+ }
+
+ $authz -> grant($granter, $grantee, $path, $attrs);
+
+=head1 DESCRIPTION
+
+=head1 PATHS
+
+In addition to the paths used by L<Gestinanna::Util/path_cmp|path_cmp>, 
+they may also contain special components:
+
+=over 4
+
+=item SELF
+
+This refers to the path describing the user or actor.  This allows the 
+specification of ACLs that are specific to each user without having to 
+have a separate ACL for each user.  For example, to allow each user 
+their own test area, allow C</testing/SELF//*> for all users that can 
+do testing.
+
+=item SELFTYPE
+
+This refers to the type of object described by SELF.  This defaults to C<user>.
+
+=item Fn
+
+The components beginning with C<F> followed by an integer refer to 
+particular parts of the user path that are variable, such as C<//> or 
+C<*>.  These are numbered starting at 1 and increasing as they are 
+encountered.  Each part of an intersection is also counted.
+
+=back
+
+=head1 METHODS
+
+=head2 new
+
+ $authz = Gestinanna::Authz -> new(alzabo_schema => $schema);
+
+This constructs a new authorization management object.  The following 
+options may be passed.
+
+=over 4
+
+=item group
+
+This is the string to use to denote the user group type.
+
+=item resource_group
+
+This is the string to use to denote the resource group type.
+
+=item alzabo_schema
+
+The L<Alzabo|Alzabo> runtime schema to use when fetching information.
+
+=item user
+
+This is the string to use to denote the user type.
+
+=back
+
+=begin testing
+
+# new
+
+our $schema;
+
+__OBJECT__ = __OBJECT__ -> new(
+    alzabo_schema => $schema
+);
+
+isa_ok(__OBJECT__, __PACKAGE__);
+
+__OBJECT__ = __PACKAGE__ -> new(
+    alzabo_schema => $schema
+);
+
+isa_ok(__OBJECT__, __PACKAGE__);
+
+__OBJECT__ = __PACKAGE__::new(
+    alzabo_schema => $schema
+);
+
+isa_ok(__OBJECT__, __PACKAGE__);
+
+=end testing
+
+=cut
+
 sub new {
-    my $self = shift;
-    my $class = ref $self || $self;
+    my $self;
+    $self = shift if @_ % 2 == 1;
+    my $class = ref $self || $self || __PACKAGE__;
 
     return bless { @_ } => $class;
 }
+
+=head2 fetch_acls
+
+ $acls = $authz -> fetch_acls($user, $resource)
+
+This method provides any ACL information that might be useful in the 
+current ACL query as indicated by the user and resource string arguments.
+
+The return value is a hash reference with the following structure:
+
+  { user_path => { resource_path => { %attributes } } }
+
+The attribute mapping maps attribute names to numeric values.  Negative
+values are considered to be prohibitive while positive values are
+permissive.  Undefined or zero values are ignored.
+
+Both C<$user> and C<$resource> will be array references.  The first
+element will be the type of object the path is referring to.  The
+second element will be the path describing the set of such objects.
+
+The safest set of information to return is all ACLs that describe the
+relationship between the C<$user> and C<$resource> object types.
+
+=begin testing
+
+# fetch_acls
+
+my $acls;
+
+$acls = __OBJECT__ -> fetch_acls([ actor => 1 ], [ xsm => '/sys/std/log-manager' ]);
+
+is_deeply($acls, {
+    1 => { 
+        '/* | //* | /*@* | //*@*' => { admin => 1 },
+        '/sys//* | /sys//*@*' => { read => 3 },
+    },
+    '*' => { 
+        '/sys//* | /sys//*@*' => { read => 1, exec => 1 },
+        '/home/SELF//* | /home/SELF//*@*' => { admin => 1 },
+    },
+});
+
+$acls = __OBJECT__ -> fetch_acls([ actor => 2 ], [ xsm => '/sys/std/log-manager' ]);
+
+is_deeply($acls, {
+    1 => { 
+        '/* | //* | /*@* | //*@*' => { admin => 1 },
+        '/sys//* | /sys//*@*' => { read => 3 },
+    },
+    '*' => { 
+        '/sys//* | /sys//*@*' => { read => 1, exec => 1 },
+        '/home/SELF//* | /home/SELF//*@*' => { admin => 1 },
+    },
+});
+
+$acls = __OBJECT__ -> fetch_acls([ actor => 2 ], [ foo => '/bar' ]);
+
+is_deeply($acls, { 
+    1 => { 
+        '/* | //* | /*@* | //*@*' => { admin => 1 },
+    },
+});
+
+$acls = __OBJECT__ -> fetch_acls([ app => 'deadbeef' ], [ xsm => '/sys/std/log-manager' ]);
+
+is_deeply($acls, { });
+
+=end testing
+
+=cut
 
 sub fetch_acls { 
     my($self, $user, $path) = @_;
@@ -45,8 +230,8 @@ sub fetch_acls {
     while($row = $cursor -> next) {
         my($rtype, $rid, $utype, $uid, $attr, $v) =
             $row -> select(qw(resource_type resource_id user_type user_id attribute value));
-        next if exists $acls{$utype}{$rtype}{$uid}{$rid}{$attr} && $acls{$utype}{$rtype}{$uid}{$rid}{$attr} > $v;
-        $acls{$utype}{$rtype}{$uid}{$rid}{$attr} = $v;
+        #next if exists $acls{$utype}{$rtype}{$uid}{$rid}{$attr} && $acls{$utype}{$rtype}{$uid}{$rid}{$attr} > $v;
+        $acls{$utype}{$rtype}{$uid}{$rid}{$attr} = $v if !defined($acls{$utype}{$rtype}{$uid}{$rid}{$attr}) || $v > $acls{$utype}{$rtype}{$uid}{$rid}{$attr};
     }
 
     my %ret;
@@ -71,9 +256,105 @@ sub fetch_acls {
     return \%ret;
 }
 
-#sub fetch_groups { $_[0] -> _abstract; }
+=begin testing
 
-#sub fetch_resource_groups { $_[0] -> _abstract; }
+# query_point_attributes
+
+my $attrs;
+
+$attrs = __OBJECT__ -> query_point_attributes([actor => '1'], ['*' => '/* | //* | /*@* | //*@*']);
+is_deeply($attrs, { admin => 1 });
+
+for my $type (qw(xsm view xslt document portal)) {
+    $attrs = __OBJECT__ -> query_point_attributes([actor => '*'], [$type => '/home/SELF//* | /home/SELF//*@*']);
+    is_deeply($attrs, { admin => 1 });
+    $attrs = __OBJECT__ -> query_point_attributes([actor => '*'], [$type => '/sys//* | /sys//*@*']);
+    is_deeply($attrs, { read => 1, exec => 1 });
+}
+
+=end testing
+
+=cut
+
+sub query_point_attributes {
+    my($self, $user, $path) = @_;
+
+        my $table = $self -> {alzabo_schema} -> table('Attribute');
+    my $cursor = $table -> rows_where(
+        where => [
+            [ $table -> column('resource_type'), '=', $path->[0] ],
+            'and',
+            [ $table -> column('resource_id'), '=', $path->[1] ],
+            'and',
+            [ $table -> column('user_type'), '=', $user->[0] ],
+            'and',
+            [ $table -> column('user_id'), '=', $user->[1] ],
+        ],
+    );   
+    
+    my %acls;
+
+    my $row;
+    while($row = $cursor -> next) {
+        my($attr, $v) =
+            $row -> select(qw(attribute value));
+        #warn "$attr => $v <=> $acls{$attr}\n";
+        #next if exists $acls{$attr} && $acls{$attr} > $v;
+        $acls{$attr} = $v if !defined($acls{$attr}) || $v > $acls{$attr};
+    }
+
+    return \%acls;
+}
+
+sub fetch_groups { 
+}
+
+sub fetch_resource_groups {
+}
+
+=begin testing
+
+# query_acls
+
+my $acls;
+
+$acls = __OBJECT__ -> query_acls([actor => 1], [xsm => '/sys/std/log-manager']);
+
+is_deeply($acls, [
+    {
+        '*' => {
+            '/sys//* | /sys//*@*' => { read => 1, exec => 1 }
+        },
+    },
+    undef, undef,
+    {
+        '1' => {
+            '/* | //* | /*@* | //*@*' => { admin => 1 },
+            '/sys//* | /sys//*@*' => { read => 3 },
+        },
+    }
+]);
+
+$acls = __OBJECT__ -> query_acls([actor => 2], [xsm => '/sys/std/log-manager']);
+
+is_deeply($acls, [
+    {
+        '*' => {
+            '/sys//* | /sys//*@*' => { read => 1, exec => 1 }
+        },
+    },
+    undef, undef, 
+    undef,
+]);
+
+$acls = __OBJECT__ -> query_acls([actor => 2], [foo => 'bar']);
+
+is_deeply($acls, [ undef, undef, undef, undef ]);
+
+
+=end testing
+
+=cut
 
 sub query_acls {
     my($self, $user, $path) = @_;
@@ -90,20 +371,19 @@ sub query_acls {
     # filter the {user} into bins: 1, 0, -1 (discard undef)
     my @acls;
     my $c;
-    my $cmp = $self -> {cmp} ||= Gestinanna::Authz::Path -> new;
 
     foreach my $u (keys %$facls) {
-        $c = $cmp -> path_cmp($upath, $u);
+        $c = path_cmp($upath, $u);
         #warn("$upath <=> $u : $c\n");
         next unless defined $c;
         if($c == 1) {
-            $c = 2 if $cmp -> path_cmp($u, $upath) == 1;
+            $c = 2 if path_cmp($u, $upath) == 1;
         }
         #warn "pushing $u onto acls $c + 1\n";
         push @{$acls[$c+1]||=[]}, $u;
     }
 
-    my @ret;
+    my @ret = ( undef ) x 4;
 
     my %vars = (
         SELF => $upath,
@@ -116,7 +396,7 @@ sub query_acls {
     foreach my $i (0..3) {
         foreach my $u ( @{$acls[$i]||[]} ) {
             delete @vars{grep { /^F\d+/ } keys %vars};
-            my $uu = $cmp -> path2regex($u);
+            my $uu = path2regex($u);
             my(@c) = $upath =~ m{^$uu$};
             #warn("$u => " . Data::Dumper -> Dump([\@c]));
             if(@c) {
@@ -131,24 +411,44 @@ sub query_acls {
                          } keys %{$facls -> {$u}};
             #warn("\%ps: " . Data::Dumper -> Dump([\%ps]));
             #warn "ppath: $ppath\n";
-            my @ps = grep { defined $cmp -> path_cmp($ppath, $_) } keys %ps;
+            my @ps = grep { defined path_cmp($ppath, $_) } keys %ps;
             #warn "ps: " . join(", ", @ps) . "\n";
-            @{$ret[$i]->{$u}}{@ps} = @{$facls -> {$u}}{@ps{@ps}};
+            @{$ret[$i]->{$u}}{@ps} = @{$facls -> {$u}}{@ps{@ps}} if @ps;
         }
     }
 
     return \@ret;
 }
 
+=begin testing
+
+# query_attributes
+
+my $attrs;
+
+$attrs = __OBJECT__ -> query_attributes([actor => 1], [xsm => '/sys/std/login-manager']);
+
+is_deeply($attrs, {
+    admin => 1,
+    read => 3,
+    exec => 1,
+});
+
+$attrs = __OBJECT__ -> query_attributes([actor => 2], [xsm => '/sys/std/login-manager']);
+
+is_deeply($attrs, {
+    exec => 1,
+    read => 1,
+});
+
+=end testing
+
+=cut
+
 sub query_attributes {
     my($self, $user, $path) = splice @_, 0, 3;
 
-    return $self -> {_attribute_cache} -> {$user} -> {$path}
-        if $self -> {_attribute_cache} -> {$user} -> {$path};
-
     my $acls = @_ ? shift : $self -> query_acls($user, $path);
-
-    #warn "Acls: " . Data::Dumper -> Dump([$acls]);
 
     # we want negatives from $acls[2], negatives from $acls[1], and positives/negatives from $acls[0] and $acls[3]
     # want to sort user paths by containment - those contained in another take precedence over the other
@@ -156,14 +456,12 @@ sub query_attributes {
 
     my $ret;
 
-    my $cmp = $self -> {cmp} ||= Gestinanna::Authz::Path -> new;
-
     foreach my $i (qw(2 1)) {
         my @us = sort { 
-            my $c = $cmp -> path_cmp($a, $b); 
+            my $c = path_cmp($a, $b); 
             return 0 unless defined $c;
             return $c if $c < 1; 
-            $c = $cmp -> path_cmp($b, $a);
+            $c = path_cmp($b, $a);
             return 1 unless defined $c;
             return $c == 1 ? 0 : 1;
         } keys %{$acls -> [$i]||{}};
@@ -173,10 +471,10 @@ sub query_attributes {
         foreach my $u (@us) {
             # now sort by how close the path matches the $ppath
             my @ps = sort { 
-                my $c = $cmp -> path_cmp($a, $b); 
+                my $c = path_cmp($a, $b); 
                 return 0 unless defined $c;
                 return $c if $c < 1; 
-                $c = $cmp -> path_cmp($b, $a);
+                $c = path_cmp($b, $a);
                 return 1 unless defined $c;
                 return $c == 1 ? 0 : 1;
             } keys %{$acls -> [$i] -> {$u}};
@@ -198,10 +496,10 @@ sub query_attributes {
 
     foreach my $i (qw(0 3)) {
         my @us = sort {
-            my $c = $cmp -> path_cmp($a, $b); 
+            my $c = path_cmp($a, $b); 
             return 0 unless defined $c;
             return $c if $c < 1; 
-            $c = $cmp -> path_cmp($b, $a);
+            $c = path_cmp($b, $a);
             return 1 unless defined $c;
             return $c == 1 ? 0 : 1;
         } keys %{$acls -> [$i]||{}};
@@ -211,10 +509,10 @@ sub query_attributes {
         foreach my $u (@us) {
             # now sort by how close the path matches the $ppath
             my @ps = sort { 
-                my $c = $cmp -> path_cmp($a, $b); 
+                my $c = path_cmp($a, $b); 
                 return 0 unless defined $c;
                 return $c if $c < 1; 
-                $c =  $cmp -> path_cmp($b, $a);
+                $c =  path_cmp($b, $a);
                 return 1 unless defined $c;
                 return $c == 1 ? 0 : 1 
             } keys %{$acls -> [$i] -> {$u}};
@@ -236,7 +534,6 @@ sub query_attributes {
 
     }
 
-    return $self -> {_attribute_cache} -> {$user} -> {$path} = $ret;
     return $ret;
 }
 
@@ -246,6 +543,17 @@ sub query_attributes {
 #    my $groups = $self -> fetch_resource_groups($path);
 #
 #}
+
+=begin testing
+
+# has_attribute
+
+ok(__OBJECT__ -> has_attribute([actor => 1], [xsm => '/home/1/std/log-manager'], [ 'read' ]));
+ok(__OBJECT__ -> has_attribute([actor => 2], [xsm => '/home/2/std/log-manager'], [ 'admin' ]));
+
+=end testing
+
+=cut
 
 sub has_attribute {
     my($self, $user, $path, $needs) = @_;
@@ -266,10 +574,21 @@ sub has_attribute {
     #warn "Allowed: ", join("; ", keys %allowed), "\n";
     #warn "Denied: ", join("; ", keys %denied), "\n";
     
-    return !($self -> _attr_or_eq($needs, \%denied)) if $attrs -> {admin} > 0;
+    return !($self -> _attr_or_eq($needs, \%denied)) if defined $attrs -> {admin} && $attrs -> {admin} > 0;
     
     return $self -> _attr_or_eq($needs, \%allowed);
 }
+
+=begin testing
+
+# _attr_or_eq
+
+is(__OBJECT__ -> _attr_or_eq( [ 'read', 'write' ], { read => 1 } ), 1);
+is(__OBJECT__ -> _attr_or_eq( [ 'read', [ 'write' ] ], { write => 1 } ), 1);
+
+=end testing
+
+=cut
      
 sub _attr_or_eq {
     my($self, $attr, $match) = @_;
@@ -302,6 +621,19 @@ sub _attr_or_eq {
     return 0;
 }               
 
+=begin testing
+
+# _attr_and_eq
+
+is(__OBJECT__ -> _attr_and_eq( [ 'read', 'write' ], { read => 1, write => 0 } ), 0);
+is(__OBJECT__ -> _attr_and_eq( [ 'read', 'write' ], { read => 1, write => 1 } ), 1);
+is(__OBJECT__ -> _attr_and_eq( [ 'read', [ 'write' ] ], { write => 1, read => 1 } ), 1);
+is(__OBJECT__ -> _attr_and_eq( [ 'read', [ 'write', 'exec' ] ], { write => 1, read => 1, exec => 0 } ), 1);
+
+=end testing
+
+=cut
+     
 sub _attr_and_eq {
     my($self, $attr, $match) = @_;
 
@@ -314,7 +646,7 @@ sub _attr_and_eq {
                 if(substr($a, 0, 1) eq "!") {
                     return 0 if $match->{substr($a, 1)};
                 } else {
-                    return 0 unless exists $match->{$a};
+                    return 0 unless $match->{$a};
                 }
             }
         }
@@ -323,320 +655,194 @@ sub _attr_and_eq {
         if(substr($attr, 0, 1) eq "!") {
             return 0 if $match->{substr($attr, 1)};  
         } else {
-            return 0 unless exists $match->{$attr};
+            return 0 unless $match->{$attr};
         }
     }
     return 1;
 }    
 
 
-
-1;
-
-__END__
-
-=head1 NAME
-
-Gestinanna::Authz
-
-=head1 SYNOPSIS
-
- $authz = new My::ACLs;
-
- if($authz -> has_attributes($user, $path, $attrs)) {
-    # do something
- }
-
-=head1 DESCRIPTION
-
-Authz::Path provides the basic logic for ACLs.  It is an abstract 
-class that does not actual manage the storage of ACLs.  You will need 
-to subclass Authz::Path and provide a storage mechanism.
-
-=head1 PATHS
-
-Paths are made up of a sub-set of the XPath language:
-
-=over 4
-
-=item /
-
-The slash (/) is the component separator.  Alone, it describes the root of the resource heirarchy.
-
-=item //
-
-The double slash (//) stands in place of any number of components 
-(zero or more).  Alone, it matches any possible path that does not 
-specify attributes or a final component.  To match any component with 
-any attributes, use C<//*|//*@*>.
-
-=item @
-
-The at sign (@) is the attribute separator.  A path should only have 
-one.  It separates the final component from any attribute.  If no 
-attribute follows it, it stands for the general collection of 
-attributes for an object.
-
-=item |
-
-The pipe symbol (|) separates paths which together specify a union.
-
-=item &
-
-The ampersand (&) separates paths which together specify an 
-intersection.  Intersection has higher precedence to union.  For 
-example, the path C<//a/* & //*@name | //b/*> is considered to be 
-C<(//a/* & //*@name) | //b/*>, not C<//a/* & (//*@name | //b/*)>.  
-There are no parenthesis for grouping in actual path expressions.
-
-=item !
-
-An odd number of initial bangs (!) will negate the following clause, up to 
-a pipe (|) or ampersand (&).  An even number of initial bangs will 
-have no effect.
-
-=back
-
-Paths may also contain special components:
-
-=over 4
-
-=item SELF
-
-This refers to the path describing the user or actor.  This allows the 
-specification of ACLs that are specific to each user without having to 
-have a separate ACL for each user.  For example, to allow each user 
-their own test area, allow C</testing/SELF//*> for all users that can 
-do testing.
-
-=item SELFTYPE
-
-This refers to the type of object described by SELF.  This defaults to C<user>.
-
-=item Fn
-
-The components beginning with C<F> followed by an integer refer to 
-particular parts of the user path that are variable, such as C<//> or 
-C<*>.  These are numbered starting at 1 and increasing as they are 
-encountered.  Each part of an intersection is also counted.
-
-=back
-
-=head2 Examples
-
-The following are some examples of paths.
-
-=over 4
-
-=item //*
-
-This matches any path.  Attaching attributes to this path will 
-apply them to all objects.
-
-=item //*@name
-
-This matches the name attribute of all objects.
-
-=item //*/*
-
-This matches any component that is not at the top-level.
-
-=item !//a//* & //b//*
-
-This matches any path that has a C<b> component and not an C<a> 
-component.
-
-=back
-
-=head1 METHODS
-
-=head2 fetch_acls
-
- $acls = $authz -> fetch_acls($user, $resource)
-
-This method must be defined in the derived class.  This method provides 
-any ACL information that might be useful in the current ACL query as 
-indicated by the user and resource string arguments.
-
-The return value is a hash reference with the following structure:
-
-  { user_path => { resource_path => { %attributes } } }
-
-The attribute mapping maps attribute names to numeric values.  Negative 
-values are considered to be prohibitive while positive values are 
-permissive.  Undefined or zero values are ignored.
-
-Both C<$user> and C<$resource> will be array references.  The first 
-element will be the type of object the path is referring to.  The 
-second element will be the path describing the set of such objects.
-
-The safest set of information to return is all ACLs that describe the 
-relationship between the C<$user> and C<$resource> object types.
-
-=head2 fetch_groups
-
- $groups = $authz -> fetch_groups($user);
-
-This method must be defined in the derived class.  This method provides 
-the list of user groups the given C<$user> belongs to.  The C<$user> 
-may be an actual user or a group.
-
-C<$user> will be an array reference.  The first element will be the type
-of the object the path is referring to.  The second element will be 
-the path describing the set of such objects.
-
-This method should return an array reference to a list of group names.  
-No object types should be specified since they are all user groups.
-
-=head2 fetch_resource_groups
-
- $groups = $authz -> fetch_resource_groups($resource);
-
-This method must be defined in the derived class.  This method provides 
-the list of resource groups the given C<$resource> belongs to.
-
-C<$resource> will be an array reference.  The first element will be the type
-of the object the path is referring to.  The second element will be 
-the path describing the set of such objects.
-
-This method should return an array reference to a list of group names.
-No object types should be specified since they are all resource groups.
-
-ACLs applied to a resource group restrict the possible ACLs that may 
-be applied to the resource group for a user or user group.  This makes 
-it easy to manage what can be done to a set of resources whether or 
-not anyone is actually allowed to do it.
-
-=head2 new
-
-This creates a new authorization object.  The following options may be passed.
-
-=over 4
-
-=item group
-
-This is the string to use to denote the user group type.
-
-=item resource_group
-
-This is the string to use to denote the resource group type.
-
-=item user
-
-This is the string to use to denote the user type.
-
-=back
-
-=head2 path_cmp
-
-This method may be called as either a static function or an object 
-method.  If an object is used, then the regular expression translations 
-of the path expressions are cached in the object.
-
- Static method:  Authz::Path::path_cmp($path_a, $path_b)
- Object method: $authz -> path_cmp($path_a, $path_b)
-
-Comparisons of intersections with other intersections are not supported 
-(i.e., only one of the paths should have an intersection).  Likewise, 
-only one of the paths should contain negations.
-
-This method returns one of four values:
-
-=over 4
-
-=item undef
-
-The two paths describe disjoint sets.
-
-=item 0
-
-The two paths describe overlapping sets.  Both of the paths 
-describe elements not described by the other.
-
-=item 1
-
-The first path describes a superset of the set described by the second 
-path, or the two paths describe equivalent sets.
-
-=item -1
-
-The first path describes a subset of the set described by the second path.
-
-=back
-
-=head2 path2regex
-
-This method will translate a path to a regular expression.  The 
-C<path_cmp> method uses this for certain comparisons.
-
-If this is called as an object method, it will cache translations.  
-Otherwise, it may be called as a static method.
-
- Static method: Authz::Path::path2regex($path);
- Object method: $authz -> path2regex($path)
-
-Some example translations (cleaned up a little):
-
-=over 4
-
-=item //*@*
-
- qr(?-xism:(?:
-     /+           # one or more initial slashes
-     ((?:
-         [^/@|&]+
-         /+
-     )*)          # any number of slash-separated path components
-     (?:/)*       # any number of trailing slashes
-     ([^/@|&]+)   # component
-     @
-     ([^/@|&]+)   # attribute
- ) )x
-
-=item /*/a | /*/b
-
- qr(?-xism:
-     (?:/([^/@|&]+)/b)  # /<any component>/b
-     |                  # OR
-     (?:/([^/@|&]+)/a)  # /<any component>/a
- )x
-
-=item /*/a & /*/*@*
-
- qr(?-xism:(?:
-    (?(?=/([^/@|&]+)/a)   # if we match /<any component>/a
-        (?:               # then match:
-            /
-            ([^/\@\|&]+)  # any component
-            /
-            ([^/\@\|&]+)  # any component
-            @
-            ([^/\@\|&]+)  # any attribute
-        )
-    )                     # otherwise, we fail
- ))x
-
-=item !//a//* & //b//*
-
- qr(?-xism:(?:
-    (?(?=
-        (?:
-            (?! /+((?:[^/@|&]+/+)*)(?:/)*a/+((?:[^/@|&]+/+)*)(?:/)*([^/@|&]+))
-            |
-            (?:!/+((?:[^/@|&]+/+)*)(?:/)*a/+((?:[^/@|&]+/+)*)(?:/)*([^/@|&]+))
-        )
-      )
-      (?:
-                /+((?:[^/@|&]+/+)*)(?:/)*b/+((?:[^/@|&]+/+)*)(?:/)*([^/@|&]+)
-      )
-    )
- ))x
-
-=back
-
-=head2 query_acls
-
-=head2 query_attributes
+###
+###
+
+=begin testing
+
+# set_point_attributes
+
+__OBJECT__ -> set_point_attributes([actor => '1'], ['*' => '/* | //* | /*@* | //*@*'], { admin => 1 }, [actor => 1]);
+__OBJECT__ -> set_point_attributes([actor => '*'], [$_ => '/home/SELF//* | /home/SELF//*@*'], { admin => 1 }, [actor => 1])
+    for qw(xsm view xslt document portal);
+__OBJECT__ -> set_point_attributes([actor => '*'], [$_ => '/sys//* | /sys//*@*'], { read => 1, exec => 1 }, [actor => 1])
+    for qw(xsm view xslt document portal);
+__OBJECT__ -> set_point_attributes([actor => '1'], [$_ => '/sys//* | /sys//*@*'], { read => 3 }, [actor => 1])
+    for qw(xsm view xslt document portal);
+
+my $table = __OBJECT__ -> {alzabo_schema} -> table('Attribute');
+
+my $cursor = $table -> all_rows;
+my %attrs;
+
+while(my $row = $cursor -> next) {
+    my($user_type, $user_id, $r_type, $r_id, $attr, $v, $granter_type, $granter_id) =
+        $row -> select(qw(user_type user_id resource_type resource_id attribute value granter_type granter_id));
+
+    $attrs{join(":", $user_type, $user_id, $r_type, $r_id, $granter_type, $granter_id)} -> {$attr} = $v;
+}
+
+ok($attrs{join(":", actor => 1, '*' => '/* | //* | /*@* | //*@*', actor => 1)}->{admin} == 1);
+ok($attrs{join(":", actor => '*', $_ => '/home/SELF//* | /home/SELF//*@*', actor => 1)}->{admin} == 1)
+    for qw(xsm view xslt document portal);
+ok($attrs{join(":", actor => '*', $_ => '/sys//* | /sys//*@*', actor => 1)}->{read} == 1
+   && $attrs{join(":", actor => '*', $_ => '/sys//* | /sys//*@*', actor => 1)}->{exec} == 1
+   && $attrs{join(":", actor => '1', $_ => '/sys//* | /sys//*@*', actor => 1)}->{read} == 3
+) for qw(xsm view xslt document portal);
+
+=end testing
+
+=cut
+
+sub set_point_attributes {
+    my($self, $actor, $resource, $attributes, $granter) = @_;
+
+    my $table = $self -> {alzabo_schema} -> table('Attribute');
+
+    my %attr = %{$attributes || {}};
+
+    my $cursor = $table -> rows_where(
+        where => [
+            [ $table -> column('resource_type'), '=', $resource->[0] ],
+            'and',
+            [ $table -> column('resource_id'), '=', $resource->[1] ],
+            'and',
+            [ $table -> column('user_type'), '=', $actor->[0] ],
+            'and',
+            [ $table -> column('user_id'), '=', $actor->[1] ],
+        ],
+    );
+        
+    my %acls;
+
+    #warn "Updating attributes for $$resource[0]:$$resource[1] => $$actor[0]:$$actor[1]\n";
+    
+    my $row;
+    while($row = $cursor -> next) {
+        my $a = $row -> select('attribute');
+        if(exists($attr{$a}) && !defined($attr{$a})) {
+    #        warn "  deleting $a\n";
+            $row -> delete;
+        }
+        else {
+    #        warn "  updating $a to $attr{$a}\n";
+            $row -> update(
+                value => delete $attr{$a},
+            );
+        }
+    }
+
+    # add attributes
+    my %ids = (
+        resource_type => $resource -> [0],
+        resource_id => $resource -> [1],
+        user_type => $actor -> [0],
+        user_id => $actor -> [1],
+    );
+
+    if($granter) {
+        $ids{granter_type} = $granter -> [0];
+        $ids{granter_id} = $granter -> [1];
+    }
+
+    foreach my $a (keys %attr) {
+        next unless defined $attr{$a}; # don't add what isn't there
+    #    warn "  adding $a as  $attr{$a}\n";
+        $table -> insert(
+            values => {
+                %ids,
+                attribute => $a,
+                value => $attr{$a},
+            },
+        );
+    }
+}
+
+=begin testing
+
+# can_grant
+
+ok(__OBJECT__ -> can_grant([actor => 1], [actor => 2], [ xsm => '/sys/std/log-manager' ], { read => 1}));
+ok(__OBJECT__ -> can_grant([actor => 1], [actor => 2], [ xsm => '/sys/std/log-manager' ], { read => 2}));
+ok(!__OBJECT__ -> can_grant([actor => 1], [actor => 2], [ xsm => '/sys/std/log-manager' ], { read => 3}));
+ok(!__OBJECT__ -> can_grant([actor => 1], [actor => 2], [ xsm => '/sys/std/log-manager' ], { read => 4}));
+ok(!__OBJECT__ -> can_grant([actor => 2], [actor => 3], [ xsm => '/sys/std/log-manager' ], { exec => 1}));
+
+=end testing
+
+=cut
+
+sub can_grant {
+    my($self, $granter, $user, $path, $attributes) = @_;
+
+    my $attr = $self -> query_attributes($granter, $path);
+    my $user_attr = $self -> query_attributes($user, $path);
+
+    #if($attr->{admin}) {
+    #    foreach my $a (keys %{$attributes}) {
+    #        $attr->{$a} = $attr->{admin} unless $attr->{$a};
+    #    }
+    #}
+    #if($user_attr->{admin}) {
+    #    foreach my $a (keys %$attributes) {
+    #        $user_attr->{$a} = $user_attr->{admin} unless $user_attr->{$a};
+    #    }
+    #}
+
+    foreach my $a (keys %{$attributes || {}}) {
+        $attr -> {$a} = 0 unless defined $attr -> {$a};
+        $attr -> {"grant_$a"} = $attr -> {"admin"} unless defined $attr -> {"grant_$a"};
+        $user_attr -> {$a} = 0 unless defined $user_attr -> {$a};
+
+        if($attributes->{$a} > 0) {
+            #return 0 if !defined $attr -> {$a} && !defined $attr -> {"grant_$a"};
+            return 0 if( (!defined($attr->{$a}) || $attr->{$a} < 2 ) && ( !defined($attr -> {"grant_$a"}) || $attr->{"grant_$a"} <= 0) );
+            next if $attr->{"grant_$a"} >= $attributes->{$a} 
+                 && $attr->{"grant_$a"} >= $user_attr->{$a};
+            return 0 unless $attr->{$a} > $attributes->{$a};
+            return 0 unless $attr->{$a} > $user_attr->{$a};
+        }
+        elsif($attributes->{$a} < 0) {
+            return 0 if $attr->{$a} < 2 && $attr->{"grant_$a"} <= 0;
+            next if $attr->{"grant_$a"} >= -$attributes->{$a} 
+                 && $attr->{"grant_$a"} >= $user_attr->{$a};
+            return 0 unless $attr->{$a} > -$attributes->{$a};
+            return 0 unless $attr->{$a} > abs($user_attr->{$a});
+        }
+    }
+    return 1;
+}
+
+=begin testing
+
+# grant
+
+ok(!__OBJECT__ -> has_attribute([actor => 2], [xsm => '/home/1/std/log-manager'], [ 'read' ]));
+ok(__OBJECT__ -> grant([actor => 1], [actor => 2], [xsm => '/home/1/std/log-manager'], {read => 1}));
+ok(__OBJECT__ -> has_attribute([actor => 2], [xsm => '/home/1/std/log-manager'], [ 'read' ]));
+
+=end testing
+
+=cut
+
+sub grant {
+    my($self, $granter, $user, $path, $attributes) = @_;
+
+    if($self -> can_grant($granter, $user, $path, $attributes)) {
+        $self -> set_point_attributes($user, $path, $attributes, $granter);
+        return 1;
+    }
+    else {
+        return 0;
+    }
+}
 
 =head1 AUTHOR
 
@@ -644,7 +850,13 @@ James G. Smith, <jsmith@cpan.org>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2003 Texas A&M University.  All Rights Reserved.
+Copyright (C) 2003-2004 Texas A&M University.  All Rights Reserved.
 
 This module is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
+
+=cut
+
+1;
+
+__END__

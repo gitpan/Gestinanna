@@ -1,12 +1,18 @@
 package Gestinanna::Shell;
 
 use Getopt::Std;
+use Gestinanna::Shell::Base;
+use Gestinanna::Exception;
 use strict;
  
+our @ISA = qw(Gestinanna::Shell::Base);
+
 our %VARIABLES = (
     user => $ENV{USER},
     home => $ENV{HOME},
 );
+
+use Log::Log4perl qw(:easy);
 
 our $password;
 
@@ -20,9 +26,13 @@ sub find_commands {
         require Module::Require;
     };
         
-    throw Gestinanna::Exception::Load(
-        -text => "Unable to load Module::Require"
+    throw Gestinanna::Exception (
+        -class => 'load.module',
+        -text => 'Unable to load %s',
+        -param => ['Module::Require'],
+        -e => $@,
     ) if $@;
+
         
     $base =~ s{::}{/}g;
 
@@ -53,6 +63,9 @@ sub shell {
     my(@argv) = @ARGV;
     my($class) = shift;
 
+    warn "Calling easy_init\n";
+    Log::Log4perl->easy_init($ERROR);  # Set priority of root logger to ERROR
+    warn "Called easy_init\n";
 
     my $self = bless { }, ref $class || $class;
 
@@ -63,25 +76,28 @@ sub shell {
     local(@ARGV) = @argv;
 
     # process @args
-    getopt('rhc:f:', \%opts);
+    getopt('prhc:f:', \%opts);
     if(exists $opts{h}) {
-        print <<1HERE1;
-Usage: $0 [-r] [-h] [-f <rc file>] [file list]
+        print <<EOF;
+Usage: $0 [-r] [-p] [-h] [-f <rc file>] [file list]
 
   Option   Description
     -f     Use given rc file instead of ~/.gstrc
     -h     This help text
     -r     Suppress use of Term::ReadLine
+    -p     Suppress use of a pager
 
 For help on available commands, type `help' within the shell or
 `perldoc Gestinanna::Shell'.
-1HERE1
+EOF
         exit 0;
     }
 
     $self -> {prompt} = "gst>";
 
     $self -> {suppress_readline} = 1 if(exists $opts{r}) ;
+    $self -> {suppress_pager} = 1 if(exists $opts{p});
+
     $self -> {suppress_readline} = scalar(@ARGV) ? 1 : ! -t STDIN
         unless defined  $self -> {suppress_readline};
 
@@ -114,6 +130,7 @@ For help on available commands, type `help' within the shell or
     unless($self->{suppress_narrative}) {
         print "\ngst shell -- Gestinanna management (v$Gestinanna::VERSION)\n";
         print "ReadLine support enabled\n" unless $self -> {suppress_readline};
+        print "Pager support enabled\n" unless $self -> {suppress_pager};
         print "Looking for command definitions...\n";
     }
 
